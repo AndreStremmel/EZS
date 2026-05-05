@@ -1,0 +1,7 @@
+.metadata/
+Debug/
+Release/
+.settings/
+*.launch
+.osx.project
+../User manual.pdf
