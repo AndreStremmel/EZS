@@ -18,7 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "tcb.h"
 #include "tasks.h"
+#include "stack.h"
+#include "scheduler.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -115,8 +118,12 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
 
-  Task2();              /// ANDRE < calling Task2() in main to test blinking
+  NVIC_SetPriority(PendSV_IRQn, 0xFF);
+	NVIC_SetPriority(SysTick_IRQn, 0x00);
+	Stack_vInit(&tasks[0], Task1);
+	Stack_vInit(&tasks[1], Task2);
 
+	Scheduler_vInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */

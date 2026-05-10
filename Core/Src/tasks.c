@@ -33,7 +33,12 @@ void Task1(void)
     while (1)
     {
         // Task 1: LED LD2 leuchtet dauerhaft
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+
+        // Nochmal eine LED toggeln, damit man sieht, dass die beiden Tasks funktionieren
+        HAL_Delay(200);
+
+        
     }
 }
 

@@ -10,8 +10,12 @@
 
 #include "tcb.h"
 #include "tasks.h"
+#include "stm32f4xx_hal.h"
 
-void Scheduler_vInit(TCB_sctTCB_t* pFirstTask);
+extern TCB_sctTCB_t* g_pCurrentTask;
+extern TCB_sctTCB_t* g_pNextTask;
+
+void Scheduler_vInit(void);
 TCB_sctTCB_t* Scheduler_pGetNextTask(void);
 
 #endif
