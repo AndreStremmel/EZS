@@ -11,24 +11,16 @@
 
 TCB_sctTCB_t* g_pCurrentTask;  // Old task
 TCB_sctTCB_t* g_pNextTask;     // New task
+TCB_sctTCB_t dummyTask;
 
-
-// Start the first task from the list
+// Start the dummy task and set the first task as next
 void Scheduler_vInit(void)
 {
-    tasks[0].eTaskState = TaskState_Running;
-    tasks[1].eTaskState = TaskState_Ready;
-    g_pCurrentTask = &tasks[0];
+    g_pCurrentTask = &dummyTask;
+//	g_pCurrentTask = &tasks[0];
     g_pNextTask    = &tasks[0];
 
-    // We need to dispatch the first Task too, otherwise the program doesnt know where to start
-    __set_PSP(tasks[0].u32TaskSP + 8 * 4);
-    __set_CONTROL(0x02);
-    __ISB();
-
     __enable_irq();
-    Task1();   // never returns
-
 }
 
 TCB_sctTCB_t* Scheduler_pGetNextTask(void)
