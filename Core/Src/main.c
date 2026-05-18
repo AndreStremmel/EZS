@@ -120,8 +120,12 @@ int main(void)
 
   NVIC_SetPriority(PendSV_IRQn, 0xFF);
 	NVIC_SetPriority(SysTick_IRQn, 0x00);
-	Stack_vInit(&tasks[0], Task1);
-	Stack_vInit(&tasks[1], Task2);
+	Stack_vInit(&tasks[0], Task_Sensor);
+	Stack_vInit(&tasks[1], Task_Processing);
+  Stack_vInit(&tasks[2], Task_Output);
+  
+
+  App_Resources_Init();
 
 	Scheduler_vInit();
   /* USER CODE END 2 */

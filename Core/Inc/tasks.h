@@ -10,11 +10,12 @@
 
 #include "tcb.h"
 
-#define NUM_TASKS 2
+#define NUM_TASKS 3
 
 extern TCB_sctTCB_t tasks[NUM_TASKS];
 
-void Task1(void);
-void Task2(void);
+void Task_Sensor(void);
+void Task_Processing(void);
+void Task_Output(void);
 
 #endif
