@@ -7,17 +7,15 @@
 
 #include "scheduler.h"
 
-//extern TCB_sctTCB_t tasks[]; // Lists of tasks
+static uint32_t g_au32TaskDelay[NUM_TASKS];
 
 TCB_sctTCB_t* g_pCurrentTask;  // Old task
 TCB_sctTCB_t* g_pNextTask;     // New task
-TCB_sctTCB_t dummyTask;
 
 // Start the dummy task and set the first task as next
 void Scheduler_vInit(void)
 {
-    g_pCurrentTask = &dummyTask;
-//	g_pCurrentTask = &tasks[0];
+    g_pCurrentTask = &tasks[NUM_TASKS - 1];
     g_pNextTask    = &tasks[0];
 
     __enable_irq();
@@ -25,6 +23,15 @@ void Scheduler_vInit(void)
 
 TCB_sctTCB_t* Scheduler_pGetNextTask(void)
 {
+    for (uint8_t i = 0; i < NUM_TASKS; i++) { // Countdown for blocked tasks
+        if (tasks[i].eTaskState == TaskState_Blocked && g_au32TaskDelay[i] > 0) {
+            g_au32TaskDelay[i]--;
+            if (g_au32TaskDelay[i] == 0) {
+                tasks[i].eTaskState = TaskState_Ready;
+            }
+        }
+    }
+
     uint8_t u8HighestPrio = 0;
 
     // Mark current task ready (it's about to be preempted)
@@ -56,4 +63,25 @@ TCB_sctTCB_t* Scheduler_pGetNextTask(void)
     g_pCurrentTask->eTaskState = TaskState_Running;
     g_pNextTask = g_pCurrentTask;
     return g_pNextTask;
+}
+
+// Custom blocked delay function, similar to HAL_Delay
+void Scheduler_vBlockedDelay(uint32_t ticks)
+{
+	uint32_t u32Start = HAL_GetTick();
+	while ((HAL_GetTick() - u32Start) < ticks) {}
+
+}
+
+// Custom non-blocked delay, it sets the status of the task 
+// to blocked and skips it until it can be unblocked again
+void Scheduler_vNonBlockedDelay(uint32_t ticks)
+{
+    uint8_t u8Idx = (uint8_t)(g_pCurrentTask - &tasks[0]);
+    g_au32TaskDelay[u8Idx] = ticks;
+    g_pCurrentTask->eTaskState = TaskState_Blocked;
+    //SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
+
+    // Wait until SysTick get called again
+	while (g_pCurrentTask->eTaskState == TaskState_Blocked) {}
 }

@@ -122,6 +122,8 @@ int main(void)
 	NVIC_SetPriority(SysTick_IRQn, 0x00);
 	Stack_vInit(&tasks[0], Task1);
 	Stack_vInit(&tasks[1], Task2);
+  Stack_vInit(&tasks[2], Task3);
+	Stack_vInit(&tasks[3], IdleTask);
 
 	Scheduler_vInit();
   /* USER CODE END 2 */

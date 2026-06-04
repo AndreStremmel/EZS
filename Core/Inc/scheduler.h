@@ -15,7 +15,9 @@
 extern TCB_sctTCB_t* g_pCurrentTask;
 extern TCB_sctTCB_t* g_pNextTask;
 
-void Scheduler_vInit(void);
 TCB_sctTCB_t* Scheduler_pGetNextTask(void);
+void Scheduler_vInit(void);
+void Scheduler_vBlockedDelay(uint32_t ticks);
+void Scheduler_vNonBlockedDelay(uint32_t ticks);
 
 #endif
