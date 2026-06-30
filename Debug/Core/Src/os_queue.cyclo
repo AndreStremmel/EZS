@@ -1,0 +1,3 @@
+../Core/Src/os_queue.c:4:6:OS_Queue_Init	1
+../Core/Src/os_queue.c:18:18:OS_Queue_Send	2
+../Core/Src/os_queue.c:35:18:OS_Queue_Receive	2

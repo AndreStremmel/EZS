@@ -1,0 +1,5 @@
+../Core/Src/scheduler.c:16:6:Scheduler_vInit	1
+../Core/Src/scheduler.c:24:15:Scheduler_pGetNextTask	8
+../Core/Src/scheduler.c:59:6:Scheduler_vCountdown	5
+../Core/Src/scheduler.c:70:6:Scheduler_vBlockedDelay	2
+../Core/Src/scheduler.c:77:6:Scheduler_vNonBlockedDelay	2

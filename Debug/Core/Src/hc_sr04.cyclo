@@ -1,0 +1,5 @@
+../Core/Src/hc_sr04.c:13:13:delay_us	2
+../Core/Src/hc_sr04.c:22:6:HC_SR04_Init	3
+../Core/Src/hc_sr04.c:95:6:HC_SR04_Trigger	1
+../Core/Src/hc_sr04.c:106:10:HC_SR04_GetEchoPulseUs	1
+../Core/Src/hc_sr04.c:112:6:HAL_GPIO_EXTI_Callback	3

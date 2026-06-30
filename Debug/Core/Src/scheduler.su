@@ -1,0 +1,5 @@
+../Core/Src/scheduler.c:16:6:Scheduler_vInit	4	static,ignoring_inline_asm
+../Core/Src/scheduler.c:24:15:Scheduler_pGetNextTask	16	static
+../Core/Src/scheduler.c:59:6:Scheduler_vCountdown	16	static
+../Core/Src/scheduler.c:70:6:Scheduler_vBlockedDelay	24	static
+../Core/Src/scheduler.c:77:6:Scheduler_vNonBlockedDelay	24	static

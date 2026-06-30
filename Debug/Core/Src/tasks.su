@@ -1,0 +1,6 @@
+../Core/Src/tasks.c:58:6:Ultrasonic_Task	32	static
+../Core/Src/tasks.c:112:6:Processing_Task	32	static
+../Core/Src/tasks.c:151:6:UART_Task	16	static
+../Core/Src/tasks.c:182:17:ParseReferenceDistance	24	static
+../Core/Src/tasks.c:196:13:Calibration_Start	32	static
+../Core/Src/tasks.c:229:6:Shell_Task	48	static

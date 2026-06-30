@@ -1,0 +1,6 @@
+../Core/Src/tasks.c:58:6:Ultrasonic_Task	7
+../Core/Src/tasks.c:112:6:Processing_Task	5
+../Core/Src/tasks.c:151:6:UART_Task	4
+../Core/Src/tasks.c:182:17:ParseReferenceDistance	4
+../Core/Src/tasks.c:196:13:Calibration_Start	7
+../Core/Src/tasks.c:229:6:Shell_Task	7

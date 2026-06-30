@@ -1,0 +1,3 @@
+../Core/Src/os_mutex.c:3:6:OS_Mutex_Init	16	static
+../Core/Src/os_mutex.c:9:9:OS_Mutex_Lock	16	static
+../Core/Src/os_mutex.c:21:6:OS_Mutex_Unlock	16	static

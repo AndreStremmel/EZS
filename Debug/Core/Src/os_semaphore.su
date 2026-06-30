@@ -1,0 +1,3 @@
+../Core/Src/os_semaphore.c:3:6:OS_Semaphore_Init	16	static
+../Core/Src/os_semaphore.c:9:9:OS_Semaphore_Take	16	static
+../Core/Src/os_semaphore.c:20:6:OS_Semaphore_Give	16	static
