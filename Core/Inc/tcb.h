@@ -27,21 +27,17 @@ typedef enum
     // TODO: For the future...
     TaskState_Deleted,      ///< [FUTURE] Indicates that a task was deleted and will never run again.
     TaskState_MAX_STATE,    ///< Used for validity checks
-} TCB_eTaskStates_t;        /// ANDRE : < fixed typo "TastStates_t" -> "TaskStates_t"
-
-typedef void (*TCB_TaskFunction_t)(void); /// ANDRE : < Function pointer type for a task function
+} TCB_eTaskStates_t;
 
 /// Structure for the task control block (TCB)
 typedef struct
 {
+    uint32_t u32TaskSP;                             ///< To store the current stack pointer. As an alternative, we could use an index 'u8IdxSP' which points to the current cell on the stack. The address the corresponds to &au32TaskStack[u8IdxSP]
     uint8_t u8TaskId;             ///< Identification of a task
     uint8_t u8TaskPrio;           ///< priority of the task
-    TCB_eTaskStates_t eTaskState; ///< the tasks state      ANDRE : < fixed typo "TastStates_t" -> "TaskStates_t"
-
-    TCB_TaskFunction_t pfTaskFunction; /// ANDRE : < Function pointer to the task entry
+    TCB_eTaskStates_t eTaskState; ///< the tasks state
 
     uint32_t au32TaskStack[TCB_TASK_STACK_SIZE];    ///< Tasks stack. We will push our registers R4-R11 on the stack because PendSV pushes the rest of the registers on the stack too.
-    uint32_t u32TaskSP;                             ///< To store the current stack pointer. As an alternative, we could use an index 'u8IdxSP' which points to the current cell on the stack. The address the corresponds to &au32TaskStack[u8IdxSP]
 } TCB_sctTCB_t;
 
 #endif /* DOS_INC_TCB_H_ */
