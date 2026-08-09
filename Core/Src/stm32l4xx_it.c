@@ -22,6 +22,11 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "scheduler.h"
+#include "board_config.h"
+#include "hcsr04.h"
+#include "SEGGER_SYSVIEW.h"
+#include "os_trace_config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,7 +114,7 @@ void MemManage_Handler(void)
 }
 
 /**
-  * @brief This function handles Prefetch fault, memory access fault.
+  * @brief This function handles Pre-fetch fault, memory access fault.
   */
 void BusFault_Handler(void)
 {
@@ -164,18 +169,13 @@ void DebugMon_Handler(void)
   /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
-/**
-  * @brief This function handles Pendable request for system service.
-  */
-void PendSV_Handler(void)
-{
-  /* USER CODE BEGIN PendSV_IRQn 0 */
+/* HINWEIS: PendSV_Handler ist ABSICHTLICH NICHT hier definiert - er
+ * kommt als Assembler-Routine aus pendsv.s (Kontextwechsel). In CubeMX
+ * unter System Core -> NVIC -> Code generation das Haekchen
+ * "Generate IRQ handler" fuer "Pendable request" ENTFERNEN, sonst
+ * erzeugt der Generator ein Duplikat (Linker-Fehler).
+ */
 
-  /* USER CODE END PendSV_IRQn 0 */
-  /* USER CODE BEGIN PendSV_IRQn 1 */
-
-  /* USER CODE END PendSV_IRQn 1 */
-}
 
 /**
   * @brief This function handles System tick timer.
@@ -183,56 +183,72 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
-
+  OS_TRACE_ISR_ENTER();
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
+  Scheduler_vCountdown();          // Non-Blocked-Delays & Timeouts
+  Scheduler_pGetNextTask();        // naechsten Task waehlen (setzt g_pNextTask)
 
+  if (g_pNextTask != g_pCurrentTask)
+  {
+      // Direkter Write statt Read-Modify-Write: PENDSVSET ist
+      // write-1-to-set, alle anderen Bits ignorieren eine 0.
+      SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;    // PendSV anstossen
+  }
+
+  OS_TRACE_ISR_EXIT();
   /* USER CODE END SysTick_IRQn 1 */
 }
 
+
 /******************************************************************************/
-/* STM32L4xx Peripheral Interrupt Handlers                                    */
+/* STM32F3xx Peripheral Interrupt Handlers                                    */
 /* Add here the Interrupt Handlers for the used peripherals.                  */
 /* For the available peripheral interrupt handler names,                      */
-/* please refer to the startup file (startup_stm32l4xx.s).                    */
+/* please refer to the startup file (startup_stm32f3xx.s).                    */
 /******************************************************************************/
 
-/**
-  * @brief This function handles EXTI line[9:5] interrupts.
-  */
-void EXTI9_5_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI9_5_IRQn 0 */
-
-  /* USER CODE END EXTI9_5_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(SPSGRF_915_GPIO3_EXTI5_Pin);
-  HAL_GPIO_EXTI_IRQHandler(SPBTLE_RF_IRQ_EXTI6_Pin);
-  HAL_GPIO_EXTI_IRQHandler(VL53L0X_GPIO1_EXTI7_Pin);
-  HAL_GPIO_EXTI_IRQHandler(LSM3MDL_DRDY_EXTI8_Pin);
-  /* USER CODE BEGIN EXTI9_5_IRQn 1 */
-
-  /* USER CODE END EXTI9_5_IRQn 1 */
-}
-
-/**
-  * @brief This function handles EXTI line[15:10] interrupts.
-  */
-void EXTI15_10_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
-
-  /* USER CODE END EXTI15_10_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(LPS22HB_INT_DRDY_EXTI0_Pin);
-  HAL_GPIO_EXTI_IRQHandler(LSM6DSL_INT1_EXTI11_Pin);
-  HAL_GPIO_EXTI_IRQHandler(BUTTON_EXTI13_Pin);
-  HAL_GPIO_EXTI_IRQHandler(ARD_D2_Pin);
-  HAL_GPIO_EXTI_IRQHandler(HTS221_DRDY_EXTI15_Pin);
-  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
-
-  /* USER CODE END EXTI15_10_IRQn 1 */
-}
-
 /* USER CODE BEGIN 1 */
+/* --------------------------------------------------------------------------
+ * HC-SR04: ECHO-Flanken-Interrupt (PB0 -> EXTI0)
+ * Die ISR misst nur Zeitstempel und gibt am Pulsende die Semaphore frei -
+ * sie kehrt danach zum unterbrochenen Task zurueck (kein Scheduling!).
+ * -------------------------------------------------------------------------- */
+void EXTI0_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI0_IRQn 0 */
+  OS_TRACE_ISR_ENTER();
+  /* USER CODE END EXTI0_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(HCSR04_ECHO_PIN);
+  /* USER CODE BEGIN EXTI0_IRQn 1 */
+  OS_TRACE_ISR_EXIT();
+  /* USER CODE END EXTI0_IRQn 1 */
+}
+
+/* In einen USER-CODE-Block (z.B. in main.c oder hier) - HAL ruft diesen
+ * Callback aus HAL_GPIO_EXTI_IRQHandler heraus auf: */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == HCSR04_ECHO_PIN)
+  {
+      HCSR04_vEchoEdgeIsr();
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * UART: RX-Interrupt (Zeichen -> Ringpuffer, bei Zeilenende Semaphore-Give
+ * aus HAL_UART_RxCpltCallback in uart_driver.c)
+ * -------------------------------------------------------------------------- */
+void USART1_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART1_IRQn 0 */
+  OS_TRACE_ISR_ENTER();
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&APP_UART_HANDLE);
+  /* USER CODE BEGIN USART1_IRQn 1 */
+  OS_TRACE_ISR_EXIT();
+  /* USER CODE END USART1_IRQn 1 */
+}
 
 /* USER CODE END 1 */
