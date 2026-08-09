@@ -1,50 +1,61 @@
-/*
- * stack.c
- *  Bereitet den initialen Stack-Frame eines Tasks so vor, als waere der
- *  Task gerade durch PendSV unterbrochen worden. Der erste "Ruecksprung"
- *  in den Task ist damit ein ganz normaler Kontextwechsel.
+/**
+ ******************************************************************************
+ * @file    stack.c
+ * @brief   Initial task stack frame setup - implementation.
+ * @author  __________
+ ******************************************************************************
  *
- *  Layout (16 Woerter, von hohen zu niedrigen Adressen):
- *    - 8 Woerter Hardware-Frame: xPSR, PC, LR, R12, R3, R2, R1, R0
- *      (entstapelt die Hardware beim Exception-Return selbst)
- *    - 8 Woerter Software-Frame: R11..R4
- *      (poppt unser PendSV-Handler per Assembler)
+ * Prepares the initial stack frame of a task so that it looks exactly as if
+ * the task had just been interrupted by PendSV. The first "return" into the
+ * task is therefore an ordinary context switch, with no special-casing needed
+ * anywhere in the scheduler or the PendSV handler.
  *
- *  Logik unveraendert zur Originalversion - nur die Kommentare wurden
- *  fachlich korrigiert.
+ * Layout (16 words, from high to low addresses):
+ *   - 8 words hardware frame: xPSR, PC, LR, R12, R3, R2, R1, R0
+ *     (unstacked by the hardware itself on exception return)
+ *   - 8 words software frame: R11..R4
+ *     (popped by our PendSV handler in assembly, see pendsv.s)
+ *
+ ******************************************************************************
  */
 
 #include "stack.h"
 
+/**
+ * @brief Prepare the initial stack frame of a task.
+ * @param pTcb          TCB of the task; u32TaskSP is set to the top of the
+ *                      prepared frame.
+ * @param pvTaskPointer Entry function of the task, placed in the PC slot.
+ * @author __________
+ */
 void Stack_vInit(TCB_sctTCB_t* pTcb, void (*pvTaskPointer)(void))
 {
     uint32_t u32Index = TCB_TASK_STACK_SIZE - 1;
 
-    // xPSR: Thumb-Bit (Bit 24) MUSS gesetzt sein - Cortex-M kennt nur
-    // Thumb-Code; ohne T-Bit wuerde der Exception-Return sofort faulten.
+    // xPSR: the Thumb bit (bit 24) MUST be set - Cortex-M only executes Thumb
+    // code, and without the T bit the exception return would fault immediately.
     pTcb->au32TaskStack[u32Index--] = 0x01000000;
 
-    // PC: Einsprungadresse der Task-Funktion
+    // PC: entry address of the task function
     pTcb->au32TaskStack[u32Index--] = (uint32_t)pvTaskPointer;
 
-    // LR des TASKS (nicht EXC_RETURN!): Dieser Slot wird beim Hardware-
-    // Unstacking ins LR-Register des Tasks geladen und waere die
-    // Ruecksprungadresse, falls die Task-Funktion je per 'return'
-    // zurueckkehrt. Unsere Tasks sind Endlosschleifen - der Wert
-    // 0xFFFFFFF9 dient als bewusste Absturz-Falle (Sprung dorthin im
-    // Thread-Modus loest einen Fault aus, statt wild ins Nirwana zu
-    // springen). Der echte EXC_RETURN liegt waehrend PendSV im
-    // LR-REGISTER und kommt nie vom Task-Stack.
+    // LR of the TASK (not EXC_RETURN!): this slot is loaded into the task's LR
+    // register during hardware unstacking and would be the return address if
+    // the task function ever returned. Our tasks are endless loops, so the
+    // value 0xFFFFFFF9 acts as a deliberate crash trap - branching there in
+    // thread mode raises a fault instead of jumping off into nowhere. The real
+    // EXC_RETURN lives in the LR REGISTER during PendSV and never comes from
+    // the task stack.
     pTcb->au32TaskStack[u32Index--] = 0xFFFFFFF9;
 
-    // Hardware-Frame-Rest + Software-Frame, alle mit 0 initialisiert:
-    // R12, R3, R2, R1, R0  (Hardware entstapelt sie)
-    // R11, R10, R9, R8, R7, R6, R5, R4  (PendSV poppt sie)
+    // Remainder of the hardware frame plus the software frame, all zeroed:
+    //   R12, R3, R2, R1, R0          (unstacked by the hardware)
+    //   R11, R10, R9, R8, R7, R6, R5, R4  (popped by PendSV)
     for (uint8_t i = 0; i < 13; i++) {
         pTcb->au32TaskStack[u32Index--] = 0x00000000;
     }
 
-    // Gespeicherter SP zeigt auf das unterste Wort des Frames (R4) -
-    // exakt der Zustand nach "PUSH {R4-R11}" in PendSV.
+    // The stored SP points at the lowest word of the frame (R4) - exactly the
+    // state that "PUSH {R4-R11}" leaves behind in PendSV.
     pTcb->u32TaskSP = (uint32_t)(&pTcb->au32TaskStack[u32Index + 1]);
 }

@@ -1,101 +1,105 @@
-/*
- * os_trace_config.h
- *  Zentrale Schalter fuer die SystemView-Instrumentierung.
+/**
+ ******************************************************************************
+ * @file    os_trace_config.h
+ * @brief   Central switches for the SystemView instrumentation.
+ * @author  __________
+ ******************************************************************************
  *
- *  ZWECK
- *  -----
- *  Der volle Trace (alle Gruppen an) erzeugt sehr viele Events und macht
- *  Aufzeichnung wie Analyse traege - bis hin zu SystemView-Overflows.
- *  Ueber die Schalter hier laesst sich pro Gruppe entscheiden, was
- *  aufgezeichnet wird. Abgeschaltete Gruppen kosten NICHTS: die
- *  OS_TRACE_*-Makros werden dann zu Leeranweisungen, der Compiler
- *  entfernt Aufruf UND Parameterberechnung vollstaendig.
+ * PURPOSE
+ * -------
+ * A full trace (all groups enabled) produces a very large number of events and
+ * makes both recording and analysis sluggish, up to and including SystemView
+ * overflows. The switches below decide per group what gets recorded. Disabled
+ * groups cost NOTHING: the OS_TRACE_* macros collapse into empty statements,
+ * so the compiler removes the call AND the parameter computation entirely.
  *
- *  BENUTZUNG
- *  ---------
- *  Fuer die einzelnen Verifikationslaeufe jeweils nur die Gruppe(n)
- *  einschalten, die die zu pruefende TeSSLa-Spec braucht:
+ * USAGE
+ * -----
+ * For each verification run, enable only the group(s) the TeSSLa spec under
+ * test actually needs:
  *
- *    tessla/scheduler_tasks.tessla -> nur SCHEDULER (+ ISR)
- *    tessla/mutex.tessla           -> SCHEDULER + MUTEX
- *    tessla/semaphore.tessla       -> SCHEDULER + SEMAPHORE
- *    tessla/queue.tessla           -> SCHEDULER + QUEUE
- *    tessla/delay.tessla           -> SCHEDULER + DELAY (+ alle Block-
- *                                    Events: MUTEX/SEMAPHORE/QUEUE, da
- *                                    die Spec Block-Ursachen unterscheidet)
- *    tessla/sensor.tessla          -> nur APP
+ *   tessla/scheduler_tasks.tessla -> SCHEDULER only (+ ISR)
+ *   tessla/mutex.tessla           -> SCHEDULER + MUTEX
+ *   tessla/semaphore.tessla       -> SCHEDULER + SEMAPHORE
+ *   tessla/queue.tessla           -> SCHEDULER + QUEUE
+ *   tessla/delay.tessla           -> SCHEDULER + DELAY (+ all blocking events:
+ *                                    MUTEX/SEMAPHORE/QUEUE, since the spec
+ *                                    distinguishes the blocking causes)
+ *   tessla/sensor.tessla          -> APP only
  *
- *  Das reduziert die Eventrate drastisch und haelt die Exportdateien
- *  fuer den Konverter handhabbar.
+ * This cuts the event rate drastically and keeps the export files manageable
+ * for the converter.
+ *
+ ******************************************************************************
  */
 
 #ifndef OS_TRACE_CONFIG_H
 #define OS_TRACE_CONFIG_H
 
 /* --------------------------------------------------------------------------
- * Hauptschalter: 0 = komplette Instrumentierung aus (auch Task-Infos und
- * Modul-Registrierung entfallen). Nuetzlich fuer Release-/Messlaeufe ohne
- * jeden Trace-Overhead.
+ * Master switch: 0 disables the complete instrumentation (including the task
+ * info and the module registration). Useful for release or timing runs
+ * without any trace overhead at all.
  * -------------------------------------------------------------------------- */
 #ifndef OS_TRACE_ENABLED
 #define OS_TRACE_ENABLED            ( 1 )
 #endif
 
 /* --------------------------------------------------------------------------
- * Gruppenschalter
+ * Group switches
  * -------------------------------------------------------------------------- */
 
-/// Scheduler-/Task-Zustandswechsel (Ready/Running/Blocked) und Idle.
-/// ACHTUNG: Basis fuer fast alle TeSSLa-Specs - im Zweifel anlassen.
+/** @brief Scheduler and task state transitions (ready/running/blocked) and idle.
+ *  @note  This is the basis for nearly every TeSSLa spec - leave it on when
+ *         in doubt. */
 #ifndef OS_TRACE_SCHEDULER
 #define OS_TRACE_SCHEDULER          ( 1 )
 #endif
 
-/// Events aus Interrupt-Handlern (RecordEnterISR/RecordExitISR).
-/// Der SysTick feuert jede Millisekunde -> das ist die groesste
-/// Einzelquelle an Events. Zum Entlasten als Erstes abschalten,
-/// solange keine ISR-bezogene Regel geprueft wird.
+/** @brief Events from interrupt handlers (RecordEnterISR/RecordExitISR).
+ *  @note  SysTick fires every millisecond, making this the single largest
+ *         source of events. Turn it off first to reduce the load, as long as
+ *         no ISR-related rule is being checked. */
 #ifndef OS_TRACE_ISR
 #define OS_TRACE_ISR                ( 0 )
 #endif
 
-/// Mutex-Operationen (Lock/Unlock/Block/Timeout)
+/** @brief Mutex operations (lock/unlock/block/timeout). */
 #ifndef OS_TRACE_MUTEX
 #define OS_TRACE_MUTEX              ( 1 )
 #endif
 
-/// Semaphor-Operationen (Take/Give/Block/Timeout)
+/** @brief Semaphore operations (take/give/block/timeout). */
 #ifndef OS_TRACE_SEMAPHORE
 #define OS_TRACE_SEMAPHORE          ( 1 )
 #endif
 
-/// Message-Queue-Operationen (Send/Recv/Full/Empty/Block/Timeout)
+/** @brief Message queue operations (send/recv/full/empty/block/timeout). */
 #ifndef OS_TRACE_QUEUE
 #define OS_TRACE_QUEUE              ( 1 )
 #endif
 
-/// Delay-Events (NonBlocked-Delay-Start, Busy-Delay-Start/Ende)
+/** @brief Delay events (non-blocking delay start, busy delay start/end). */
 #ifndef OS_TRACE_DELAY
 #define OS_TRACE_DELAY              ( 1 )
 #endif
 
-/// Applikationsevents (UartTxDist, SensorErr, CalStart/CalDone).
-/// Sehr wenige Events (ca. 10/s) - kann fast immer anbleiben.
+/** @brief Application events (UartTxDist, SensorErr, CalStart/CalDone).
+ *  @note  Very few events (roughly 10/s), so this can stay on almost always. */
 #ifndef OS_TRACE_APP
 #define OS_TRACE_APP                ( 1 )
 #endif
 
 /* --------------------------------------------------------------------------
- * Feinschalter: "Try"-Events
+ * Fine-grained switch: "try" events
  *
- * Jede Lock-/Take-/Send-/Recv-Operation meldet zusaetzlich zum Ergebnis
- * (Ok/Block/Timeout/Full/Empty) einen "Try" beim Eintritt. Fuer die
- * Verifikation sind die Try-Events NICHT noetig - keine der gelieferten
- * TeSSLa-Specs wertet sie aus. Sie verdoppeln aber grob die Eventzahl
- * der jeweiligen Gruppe.
+ * Every lock/take/send/recv operation reports a "try" on entry in addition to
+ * its outcome (ok/block/timeout/full/empty). The try events are NOT needed for
+ * the verification - none of the supplied TeSSLa specs evaluates them - but
+ * they roughly double the event count of their group.
  *
- * -> Standard: AUS. Nur einschalten, wenn ihr beim Debuggen sehen wollt,
- *    dass eine Operation ueberhaupt versucht wurde.
+ * -> Default: OFF. Only enable them when debugging, to see that an operation
+ *    was attempted at all.
  * -------------------------------------------------------------------------- */
 #ifndef OS_TRACE_TRY_EVENTS
 #define OS_TRACE_TRY_EVENTS         ( 0 )
@@ -103,26 +107,26 @@
 
 
 /* --------------------------------------------------------------------------
- * Integrationstests statt Applikation starten
+ * Run the integration tests instead of the application
  *
- * 1 = main() startet das Testset aus tests.c (Mutex-/Semaphore-/Queue-
- *     Integrationstests mit konkurrierendem und blockierendem Zugriff)
- *     statt Sensor/Proc/Shell. Der HC-SR04 wird dabei nicht benoetigt.
- * 0 = Normalbetrieb (Distanzmessung).
+ * 1 = main() starts the test set from tests.c (mutex/semaphore/queue
+ *     integration tests with concurrent and blocking access) instead of
+ *     sensor/proc/shell. The HC-SR04 is not needed in this mode.
+ * 0 = normal operation (distance measurement).
  *
- * Ergebnisse erscheinen auf der UART; der Trace laesst sich zusaetzlich
- * gegen mutex.tessla / semaphore.tessla / queue.tessla pruefen.
+ * Results appear on the UART; the trace can additionally be checked against
+ * mutex.tessla / semaphore.tessla / queue.tessla.
  * -------------------------------------------------------------------------- */
 #ifndef OS_RUN_INTEGRATION_TESTS
 #define OS_RUN_INTEGRATION_TESTS    ( 0 )
 #endif
 
 /* --------------------------------------------------------------------------
- * Abgeleitete Makros - hier nichts aendern.
+ * Derived macros - do not change anything below this line.
  *
- * Muster: OS_TRACE_<GRUPPE>_REC<n>(...) ist entweder der echte
- * Record-Aufruf oder eine Leeranweisung. Die do{}while(0)-Huelle haelt
- * die Makros syntaktisch wie einen Funktionsaufruf (inkl. Semikolon).
+ * Pattern: OS_TRACE_<GROUP>_REC<n>(...) is either the real record call or an
+ * empty statement. The do{}while(0) wrapper keeps the macros syntactically
+ * equivalent to a function call (including the trailing semicolon).
  * -------------------------------------------------------------------------- */
 
 #if (OS_TRACE_ENABLED != 0)
@@ -171,7 +175,7 @@
   #define OS_TRACE_DLY2(evt, p0, p1)         do { (void)0; } while (0)
 #endif
 
-/* --- Applikation --- */
+/* --- Application --- */
 #if (OS_TRACE_ENABLED != 0) && (OS_TRACE_APP != 0)
   #define OS_TRACE_APP1(evt, p0)             OS_TRACE_REC1(evt, p0)
   #define OS_TRACE_APP2(evt, p0, p1)         OS_TRACE_REC2(evt, p0, p1)
@@ -180,7 +184,7 @@
   #define OS_TRACE_APP2(evt, p0, p1)         do { (void)0; } while (0)
 #endif
 
-/* --- "Try"-Varianten: zusaetzlich am Feinschalter haengend --- */
+/* --- "Try" variants: additionally gated by the fine-grained switch --- */
 #if (OS_TRACE_TRY_EVENTS != 0)
   #define OS_TRACE_MTX_TRY2(evt, p0, p1)     OS_TRACE_MTX2(evt, p0, p1)
   #define OS_TRACE_SEM_TRY2(evt, p0, p1)     OS_TRACE_SEM2(evt, p0, p1)
@@ -191,7 +195,7 @@
   #define OS_TRACE_Q_TRY2(evt, p0, p1)       do { (void)0; } while (0)
 #endif
 
-/* --- ISR-Instrumentierung (SystemView-Basisevents) --- */
+/* --- ISR instrumentation (SystemView base events) --- */
 #if (OS_TRACE_ENABLED != 0) && (OS_TRACE_ISR != 0)
   #define OS_TRACE_ISR_ENTER()               SEGGER_SYSVIEW_RecordEnterISR()
   #define OS_TRACE_ISR_EXIT()                SEGGER_SYSVIEW_RecordExitISR()
@@ -200,7 +204,7 @@
   #define OS_TRACE_ISR_EXIT()                do { (void)0; } while (0)
 #endif
 
-/* --- Scheduler-/Task-Zustandsevents (SystemView-Basisevents) --- */
+/* --- Scheduler and task state events (SystemView base events) --- */
 #if (OS_TRACE_ENABLED != 0) && (OS_TRACE_SCHEDULER != 0)
   #define OS_TRACE_TASK_START_EXEC(tcb)      SEGGER_SYSVIEW_OnTaskStartExec((uint32_t)(tcb))
   #define OS_TRACE_TASK_STOP_EXEC()          SEGGER_SYSVIEW_OnTaskStopExec()

@@ -1,18 +1,28 @@
-/*
- * shell.c
- *  Interaktive UART-Shell mit Kalibrierroutine.
+/**
+ ******************************************************************************
+ * @file    shell.c
+ * @brief   Interactive UART shell with calibration routine - implementation.
+ * @author  __________
+ ******************************************************************************
  *
- *  Kommandos:
- *    help          - Kommandouebersicht
- *    status        - aktuelle Kalibrierwerte anzeigen
- *    cal <mm>      - Kalibrierung starten: Objekt in bekannter Distanz
- *                    <mm> platzieren; es werden SHELL_CAL_SAMPLES rohe
- *                    Messwerte gemittelt und der Offset so gesetzt, dass
- *                    der Mittelwert auf <mm> abgebildet wird.
+ * Commands:
+ *   help          - list the available commands
+ *   status        - show the current calibration values
+ *   cal <mm>      - start a calibration: place an object at the known distance
+ *                   <mm>; SHELL_CAL_SAMPLES raw measurements are averaged and
+ *                   the offset is set so that the average maps onto <mm>.
  *
- *  Waehrend der Kalibrierung setzt die Shell g_userConfig.active = 0 als
- *  "Roh-Modus"-Signal: der Proc-Task laesst Offset/Faktor dann unangewendet,
- *  damit auf unverfaelschten Werten kalibriert wird.
+ * During calibration the shell sets g_userConfig.active = 0 as a "raw mode"
+ * signal: ProcTask then leaves offset and factor unapplied, so that the
+ * averaging happens on undistorted values.
+ *
+ * The calibration is driven from the UartShell task rather than run as a loop
+ * of its own: Shell_u8FeedCalibration() consumes one measurement per call, so
+ * the shell stays responsive while a calibration is in progress.
+ *
+ * @see shell.h for the API description.
+ *
+ ******************************************************************************
  */
 
 #include "shell.h"
@@ -22,13 +32,23 @@
 #include "os_trace.h"
 #include <string.h>
 
-/* Kalibrier-Zustand (nur vom UartShell-Task benutzt) */
-static uint8_t  s_u8CalRunning   = 0u;
-static uint8_t  s_u8CalCollected = 0u;
-static uint32_t s_u32CalSum      = 0u;
-static uint16_t s_u16CalTarget   = 0u;
+/* Calibration state - only ever touched by the UartShell task, so it needs no
+ * locking of its own */
+static uint8_t  s_u8CalRunning   = 0u;   ///< 1 while a calibration is in progress
+static uint8_t  s_u8CalCollected = 0u;   ///< Samples collected so far
+static uint32_t s_u32CalSum      = 0u;   ///< Running sum of the collected samples
+static uint16_t s_u16CalTarget   = 0u;   ///< Reference distance given by the user
 
-/// Dezimalstring -> uint16, gibt 1 bei Erfolg zurueck
+/**
+ * @brief  Parse a decimal string into a uint16.
+ * @param  pc      String to parse; leading spaces are skipped.
+ * @param  pu16Out Receives the parsed value.
+ * @return 1 on success, 0 on overflow, on a missing digit or on trailing junk.
+ * @author __________
+ *
+ * Hand-written instead of using strtoul to keep the C library dependency (and
+ * its stack footprint) out of the task.
+ */
 static uint8_t prv_u8ParseUInt(const char *pc, uint16_t *pu16Out)
 {
     uint32_t u32Val = 0u;
@@ -46,6 +66,14 @@ static uint8_t prv_u8ParseUInt(const char *pc, uint16_t *pu16Out)
     return (u8Any != 0u && (*pc == '\0' || *pc == ' ')) ? 1u : 0u;
 }
 
+/**
+ * @brief Print the current calibration values over UART.
+ * @author __________
+ *
+ * Copies the configuration out under g_configMutex first, then prints without
+ * holding it - the two mutexes are never held at the same time, which rules
+ * out a lock-order deadlock.
+ */
 static void prv_vPrintStatus(void)
 {
     User_Data_t sCfg;
@@ -56,6 +84,7 @@ static void prv_vPrintStatus(void)
 
     OS_Mutex_LockBlocking(&g_uartMutex);
     UART_SendString("Kalibrierung: Offset=");
+    /* UART_SendUInt has no signed variant, so print the sign separately */
     if (sCfg.calibrationOffsetMm < 0)
     {
         UART_SendString("-");
@@ -71,11 +100,19 @@ static void prv_vPrintStatus(void)
     OS_Mutex_Unlock(&g_uartMutex);
 }
 
+/**
+ * @brief Parse and execute one complete input line.
+ * @param pcLine Null-terminated input line without the line ending.
+ * @author __________
+ *
+ * @note The caller must NOT hold g_uartMutex - this function acquires it
+ *       itself for its output.
+ */
 void Shell_vHandleLine(const char *pcLine)
 {
     if (pcLine[0] == '\0')
     {
-        return;   /* Leerzeile ignorieren */
+        return;   /* Ignore empty lines */
     }
 
     if (strcmp(pcLine, "help") == 0)
@@ -102,7 +139,7 @@ void Shell_vHandleLine(const char *pcLine)
             return;
         }
 
-        /* Roh-Modus aktivieren, damit auf unkalibrierten Werten gemittelt wird */
+        /* Switch to raw mode so the averaging runs on uncalibrated values */
         OS_Mutex_LockBlocking(&g_configMutex);
         g_userConfig.active = 0u;
         OS_Mutex_Unlock(&g_configMutex);
@@ -128,6 +165,17 @@ void Shell_vHandleLine(const char *pcLine)
     }
 }
 
+/**
+ * @brief  Feed a processed measurement into a running calibration.
+ * @param  psData Measurement record that was just received.
+ * @return 1 if the value was consumed by the calibration (and must therefore
+ *         NOT be printed as a distance), 0 otherwise.
+ * @author __________
+ *
+ * Once SHELL_CAL_SAMPLES valid samples have been collected, the offset is
+ * computed as (target - average), the factor is reset to neutral and the
+ * calibration is re-enabled.
+ */
 uint8_t Shell_u8FeedCalibration(const ProcessedData_t *psData)
 {
     if (s_u8CalRunning == 0u)
@@ -137,7 +185,7 @@ uint8_t Shell_u8FeedCalibration(const ProcessedData_t *psData)
 
     if (psData->error != 0u)
     {
-        return 1u;   /* Fehlmessungen verwerfen, aber Wert "verbrauchen" */
+        return 1u;   /* Discard failed measurements, but still "consume" them */
     }
 
     s_u32CalSum += psData->distance_mm;
@@ -151,7 +199,7 @@ uint8_t Shell_u8FeedCalibration(const ProcessedData_t *psData)
         OS_Mutex_LockBlocking(&g_configMutex);
         g_userConfig.calibrationOffsetMm       = i16Offset;
         g_userConfig.calibrationFactorPermille = 1000u;
-        g_userConfig.active                    = 1u;   /* Kalibrierung wieder anwenden */
+        g_userConfig.active                    = 1u;   /* Apply calibration again */
         OS_Mutex_Unlock(&g_configMutex);
 
         s_u8CalRunning = 0u;

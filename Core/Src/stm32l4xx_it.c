@@ -3,6 +3,7 @@
   ******************************************************************************
   * @file    stm32l4xx_it.c
   * @brief   Interrupt Service Routines.
+  * @author  __________ (USER CODE sections only)
   ******************************************************************************
   * @attention
   *
@@ -12,6 +13,19 @@
   * This software is licensed under terms that can be found in the LICENSE file
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  *
+  * @note This file is STM32CubeMX-generated. Only the contents of the USER CODE
+  *       sections were written by us - namely the RTOS hook in SysTick_Handler,
+  *       the HC-SR04 echo interrupt (EXTI0) and the UART RX interrupt, plus the
+  *       trace instrumentation around them.
+  *
+  * Interrupt priorities used here (set in main.c and the drivers):
+  *   SysTick 0  - highest, drives the scheduling decision
+  *   EXTI0   5  - HC-SR04 echo edges, the most timing-critical signal
+  *   USART1  6  - shell input
+  *   PendSV  15 - lowest, so the context switch runs after every other ISR
   *
   ******************************************************************************
   */
@@ -169,16 +183,23 @@ void DebugMon_Handler(void)
   /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
-/* HINWEIS: PendSV_Handler ist ABSICHTLICH NICHT hier definiert - er
- * kommt als Assembler-Routine aus pendsv.s (Kontextwechsel). In CubeMX
- * unter System Core -> NVIC -> Code generation das Haekchen
- * "Generate IRQ handler" fuer "Pendable request" ENTFERNEN, sonst
- * erzeugt der Generator ein Duplikat (Linker-Fehler).
+/* NOTE: PendSV_Handler is DELIBERATELY not defined here - it is provided as
+ * an assembly routine in pendsv.s, which performs the context switch.
+ *
+ * In CubeMX, under System Core -> NVIC -> Code generation, the
+ * "Generate IRQ handler" checkbox for "Pendable request" must be CLEARED,
+ * otherwise the generator emits a duplicate and the link fails.
  */
 
 
 /**
   * @brief This function handles System tick timer.
+  * @author __________ (USER CODE sections)
+  *
+  * The heartbeat of the RTOS: advances the HAL tick, runs the delay/timeout
+  * countdown, asks the scheduler for the next task and pends a PendSV if the
+  * selection actually changed. The switch itself is deferred to PendSV so it
+  * happens at the lowest priority, after all other pending interrupts.
   */
 void SysTick_Handler(void)
 {
@@ -187,14 +208,14 @@ void SysTick_Handler(void)
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
-  Scheduler_vCountdown();          // Non-Blocked-Delays & Timeouts
-  Scheduler_pGetNextTask();        // naechsten Task waehlen (setzt g_pNextTask)
+  Scheduler_vCountdown();          // non-blocking delays & timeouts
+  Scheduler_pGetNextTask();        // select the next task (sets g_pNextTask)
 
   if (g_pNextTask != g_pCurrentTask)
   {
-      // Direkter Write statt Read-Modify-Write: PENDSVSET ist
-      // write-1-to-set, alle anderen Bits ignorieren eine 0.
-      SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;    // PendSV anstossen
+      // Plain write instead of read-modify-write: PENDSVSET is write-1-to-set
+      // and every other bit ignores a written 0, so no read is needed.
+      SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;    // trigger PendSV
   }
 
   OS_TRACE_ISR_EXIT();
@@ -211,10 +232,17 @@ void SysTick_Handler(void)
 
 /* USER CODE BEGIN 1 */
 /* --------------------------------------------------------------------------
- * HC-SR04: ECHO-Flanken-Interrupt (PB0 -> EXTI0)
- * Die ISR misst nur Zeitstempel und gibt am Pulsende die Semaphore frei -
- * sie kehrt danach zum unterbrochenen Task zurueck (kein Scheduling!).
+ * HC-SR04: echo edge interrupt (ECHO pin -> EXTI0)
  * -------------------------------------------------------------------------- */
+
+/**
+  * @brief Handles the HC-SR04 echo edge interrupt.
+  * @author __________
+  *
+  * The ISR only captures timestamps and gives the semaphore at the end of the
+  * pulse; it then returns to the interrupted task without triggering any
+  * scheduling of its own. The actual work happens in HCSR04_vEchoEdgeIsr().
+  */
 void EXTI0_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI0_IRQn 0 */
@@ -226,8 +254,14 @@ void EXTI0_IRQHandler(void)
   /* USER CODE END EXTI0_IRQn 1 */
 }
 
-/* In einen USER-CODE-Block (z.B. in main.c oder hier) - HAL ruft diesen
- * Callback aus HAL_GPIO_EXTI_IRQHandler heraus auf: */
+/**
+  * @brief GPIO EXTI callback, dispatched by the HAL per pin.
+  * @param GPIO_Pin Pin that triggered the interrupt.
+  * @author __________
+  *
+  * Called by the HAL from within HAL_GPIO_EXTI_IRQHandler(). The pin check
+  * keeps the handler correct if further EXTI sources are added later.
+  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == HCSR04_ECHO_PIN)
@@ -237,9 +271,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 
 /* --------------------------------------------------------------------------
- * UART: RX-Interrupt (Zeichen -> Ringpuffer, bei Zeilenende Semaphore-Give
- * aus HAL_UART_RxCpltCallback in uart_driver.c)
+ * UART: RX interrupt
  * -------------------------------------------------------------------------- */
+
+/**
+  * @brief Handles the USART1 interrupt (shell input).
+  * @author __________
+  *
+  * The HAL dispatches to HAL_UART_RxCpltCallback() in uart_driver.c, which
+  * stores the character in the ring buffer and gives g_uartRxSemaphore once a
+  * complete line has arrived.
+  */
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */

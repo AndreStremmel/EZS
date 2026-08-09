@@ -1,14 +1,20 @@
 /**
+ ******************************************************************************
  * @file    shell.h
- * @brief   Interaktive UART-Shell: Kommandoparser und Kalibrierroutine.
- * @author  TODO: Name eintragen
+ * @brief   Interactive UART shell: command parser and calibration routine.
+ * @author  __________
+ ******************************************************************************
  *
- * Wird vom UartShell-Task aufgerufen (siehe tasks.c). Unterstuetzte
- * Kommandos: `help`, `status`, `cal <mm>`.
+ * Driven by UartShellTask (see tasks.c). Supported commands:
+ *   help          - list the available commands
+ *   status        - show the current calibration values
+ *   cal <mm>      - start a calibration run
  *
- * Kalibrierung: `cal <mm>` schaltet auf Rohwerte um, mittelt
- * #SHELL_CAL_SAMPLES Messungen und setzt daraus den Offset
- * (Offset = Zielwert - Mittelwert) in g_userConfig.
+ * Calibration: `cal <mm>` switches the output to raw values, averages
+ * #SHELL_CAL_SAMPLES measurements and derives the offset from the result
+ * (offset = target value - measured average), storing it in g_userConfig.
+ *
+ ******************************************************************************
  */
 
 #ifndef SHELL_H
@@ -17,28 +23,29 @@
 #include <stdint.h>
 #include "app_messages.h"
 
-/// Anzahl Messwerte, ueber die die Kalibrierung mittelt.
+/** @brief Number of measurements the calibration averages over. */
 #define SHELL_CAL_SAMPLES   ( 8u )
 
 /**
- * @brief Eine komplette Eingabezeile verarbeiten.
- * @param pcLine Nullterminierte Eingabezeile ohne Zeilenende
- *               (z.B. "cal 500"). Unbekannte Kommandos erzeugen einen
- *               Hinweis auf der UART.
- * @note Der Aufrufer darf g_uartMutex NICHT halten - die Funktion
- *       sperrt ihn fuer ihre Ausgaben selbst.
+ * @brief Parse and execute one complete input line.
+ * @param pcLine Null-terminated input line without the line ending
+ *               (e.g. "cal 500"). Unknown commands produce a hint on the UART.
+ * @author __________
+ *
+ * @note The caller must NOT hold g_uartMutex - this function acquires it
+ *       itself for its own output.
  */
 void Shell_vHandleLine(const char *pcLine);
 
 /**
- * @brief Verarbeitete Sensordaten einer laufenden Kalibrierung zufuehren.
+ * @brief Feed a processed measurement into a running calibration.
+ * @param  psData Measurement record that was just received.
+ * @return 1 if the value was consumed by the calibration (in which case it
+ *         must NOT be printed as a distance), 0 otherwise.
+ * @author __________
  *
- * Wird vom UartShell-Task fuer jeden empfangenen Messwert aufgerufen,
- * bevor dieser ausgegeben wird.
- *
- * @param psData Zeiger auf den soeben empfangenen Messdatensatz.
- * @return 1, wenn der Wert von der Kalibrierung verbraucht wurde (dann
- *         NICHT als Distanz ausgeben), sonst 0.
+ * Called by UartShellTask for every received measurement before that
+ * measurement is printed.
  */
 uint8_t Shell_u8FeedCalibration(const ProcessedData_t *psData);
 
