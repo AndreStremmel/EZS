@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    shell.h
  * @brief   Interactive UART shell: command parser and calibration routine.
- * @author  __________
+ * @author  Shared Work
  ******************************************************************************
  *
  * Driven by UartShellTask (see tasks.c). Supported commands:
@@ -30,7 +30,7 @@
  * @brief Parse and execute one complete input line.
  * @param pcLine Null-terminated input line without the line ending
  *               (e.g. "cal 500"). Unknown commands produce a hint on the UART.
- * @author __________
+ * @author Shared Work
  *
  * @note The caller must NOT hold g_uartMutex - this function acquires it
  *       itself for its own output.
@@ -42,7 +42,7 @@ void Shell_vHandleLine(const char *pcLine);
  * @param  psData Measurement record that was just received.
  * @return 1 if the value was consumed by the calibration (in which case it
  *         must NOT be printed as a distance), 0 otherwise.
- * @author __________
+ * @author Shared Work
  *
  * Called by UartShellTask for every received measurement before that
  * measurement is printed.

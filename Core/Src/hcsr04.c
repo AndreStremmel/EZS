@@ -3,7 +3,7 @@
  * @file    hcsr04.c
  * @brief   Interrupt-driven driver for the HC-SR04 ultrasonic sensor -
  *          implementation.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Timing source: DWT->CYCCNT (the CPU cycle counter). The conversion to
@@ -38,7 +38,7 @@ static volatile uint8_t  s_u8GotRise      = 0u;   ///< Rising edge seen?
 
 /**
  * @brief Initialise the driver: cycle counter, EXTI priority, trigger pin.
- * @author __________
+ * @author Andre
  */
 void HCSR04_vInit(void)
 {
@@ -57,7 +57,7 @@ void HCSR04_vInit(void)
 /**
  * @brief Busy-wait for a number of microseconds using the cycle counter.
  * @param us Delay in microseconds.
- * @author __________
+ * @author Berkay
  *
  * Only used for the 10 us trigger pulse - far too short to be worth a
  * scheduler round trip.
@@ -71,7 +71,7 @@ static void prv_vDelayUs(uint32_t us)
 
 /**
  * @brief Emit the trigger pulse and arm the edge capture for one measurement.
- * @author __________
+ * @author Andre
  */
 void HCSR04_vStartMeasurement(void)
 {
@@ -86,7 +86,7 @@ void HCSR04_vStartMeasurement(void)
 
 /**
  * @brief Edge handler for the echo pin, called from HAL_GPIO_EXTI_Callback().
- * @author __________
+ * @author Berkay
  *
  * Timestamps the rising edge, computes the pulse width on the falling edge,
  * disarms the measurement and signals g_echoDoneSemaphore so the waiting
@@ -119,7 +119,7 @@ void HCSR04_vEchoEdgeIsr(void)
 /**
  * @brief  Width of the last measured echo pulse in microseconds.
  * @return Pulse width in us.
- * @author __________
+ * @author Berkay
  */
 uint32_t HCSR04_u32GetPulseUs(void)
 {
@@ -129,7 +129,7 @@ uint32_t HCSR04_u32GetPulseUs(void)
 /**
  * @brief  Uncalibrated distance derived from the last echo pulse.
  * @return Distance in mm (see the conversion in the file header).
- * @author __________
+ * @author Andre
  */
 uint32_t HCSR04_u32GetDistanceMmRaw(void)
 {
@@ -139,7 +139,7 @@ uint32_t HCSR04_u32GetDistanceMmRaw(void)
 /**
  * @brief  Plausibility check on the last measurement.
  * @return 1 if the pulse width was outside the datasheet limits, 0 otherwise.
- * @author __________
+ * @author Berkay
  */
 uint8_t HCSR04_u8IsOutOfRange(void)
 {

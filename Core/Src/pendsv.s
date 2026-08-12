@@ -1,7 +1,7 @@
 @ ******************************************************************************
 @ @file    pendsv.s
 @ @brief   PendSV exception handler - performs the actual context switch.
-@ @author  __________
+@ @author  Berkay
 @ ******************************************************************************
 @
 @ The scheduler only selects the next task and publishes it in g_pNextTask;

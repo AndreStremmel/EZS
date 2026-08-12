@@ -3,7 +3,7 @@
  * @file    tasks.c
  * @brief   Application task set: HC-SR04 distance measurement with UART output
  *          and interactive shell - implementation.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Data flow:
@@ -50,7 +50,7 @@ TCB_sctTCB_t tasks[NUM_TASKS];
 
 /**
  * @brief Triggers a HC-SR04 measurement every 100 ms and publishes the result.
- * @author __________
+ * @author Andre
  *
  * Waits for the echo ISR through a semaphore with timeout and sends the result
  * (or the error) into the sensor queue. Uses an absolute time grid, so the
@@ -118,7 +118,7 @@ void SensorTask(void)
 
 /**
  * @brief Applies the calibration to raw measurements and forwards them.
- * @author __________
+ * @author Andre
  *
  * Reads from the sensor queue, applies offset and factor from g_userConfig
  * (under g_configMutex) and sends the result to the processed queue.
@@ -169,7 +169,7 @@ void ProcTask(void)
 
 /**
  * @brief Prints every processed measurement over UART and serves the shell.
- * @author __________
+ * @author Andre
  *
  * Outputs one line per measurement (every 100 ms), reports sensor errors and
  * handles the interactive commands (help/cal/status).
@@ -234,7 +234,7 @@ void UartShellTask(void)
 
 /**
  * @brief Lowest priority fallback task; runs when nothing else is ready.
- * @author __________
+ * @author Andre
  *
  * @note See README: main() should call IdleTask() as its last statement, so
  *       that this code really is the idle context.
@@ -251,7 +251,7 @@ void IdleTask(void)
 
 /**
  * @brief Populate the tasks[] array with IDs, priorities and initial states.
- * @author __________
+ * @author Andre
  *
  * Two variants selected at compile time: the normal application task set, and
  * the test task set used when #OS_RUN_INTEGRATION_TESTS is active. Both keep

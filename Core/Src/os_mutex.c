@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_mutex.c
  * @brief   Binary mutex with owner tracking - implementation.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * All three lock variants (non-blocking, blocking, timeout) share a single
@@ -27,7 +27,7 @@
  * @brief Initialise a mutex to the unlocked state.
  * @param mutex     Mutex to initialise.
  * @param u8TraceId ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  */
 void OS_Mutex_Init(OS_Mutex_t *mutex, uint8_t u8TraceId)
 {
@@ -43,7 +43,7 @@ void OS_Mutex_Init(OS_Mutex_t *mutex, uint8_t u8TraceId)
  * @param  u32TimeoutTicks Timeout in ticks, or OS_WAIT_FOREVER.
  * @param  u8NonBlocking   1 = return OS_WOULD_BLOCK instead of blocking.
  * @return OS_OK, OS_WOULD_BLOCK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  *
  * Uses the same retry pattern as the semaphore (see os_semaphore.c): the
  * availability check happens inside a critical section, and being woken up
@@ -121,7 +121,7 @@ static OS_Result_t prv_Lock(OS_Mutex_t *mutex, uint32_t u32TimeoutTicks, uint8_t
  * @brief  Non-blocking lock: try to take the mutex and return immediately.
  * @param  mutex Mutex to lock.
  * @return OS_OK or OS_WOULD_BLOCK.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Mutex_LockNonBlocking(OS_Mutex_t *mutex)
 {
@@ -132,7 +132,7 @@ OS_Result_t OS_Mutex_LockNonBlocking(OS_Mutex_t *mutex)
  * @brief  Blocking lock: block until the mutex becomes free.
  * @param  mutex Mutex to lock.
  * @return Always OS_OK.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Mutex_LockBlocking(OS_Mutex_t *mutex)
 {
@@ -144,7 +144,7 @@ OS_Result_t OS_Mutex_LockBlocking(OS_Mutex_t *mutex)
  * @param  mutex           Mutex to lock.
  * @param  u32TimeoutTicks Maximum wait time in ticks.
  * @return OS_OK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  *
  * A timeout of 0 would block forever in the countdown logic, so it is mapped
  * to the non-blocking variant instead.
@@ -161,7 +161,7 @@ OS_Result_t OS_Mutex_LockTimeout(OS_Mutex_t *mutex, uint32_t u32TimeoutTicks)
 /**
  * @brief Unlock the mutex and wake up every task waiting for it.
  * @param mutex Mutex to release.
- * @author __________
+ * @author Andre
  *
  * Ownership is enforced here: a release attempt by a task that does not own
  * the mutex is rejected and reported as OS_TRACE_EVT_MTX_UNLOCK_DENIED, which

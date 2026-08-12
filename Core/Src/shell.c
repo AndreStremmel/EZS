@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    shell.c
  * @brief   Interactive UART shell with calibration routine - implementation.
- * @author  __________
+ * @author  Shared Work
  ******************************************************************************
  *
  * Commands:
@@ -44,7 +44,7 @@ static uint16_t s_u16CalTarget   = 0u;   ///< Reference distance given by the us
  * @param  pc      String to parse; leading spaces are skipped.
  * @param  pu16Out Receives the parsed value.
  * @return 1 on success, 0 on overflow, on a missing digit or on trailing junk.
- * @author __________
+ * @author Shared Work
  *
  * Hand-written instead of using strtoul to keep the C library dependency (and
  * its stack footprint) out of the task.
@@ -68,7 +68,7 @@ static uint8_t prv_u8ParseUInt(const char *pc, uint16_t *pu16Out)
 
 /**
  * @brief Print the current calibration values over UART.
- * @author __________
+ * @author Shared Work
  *
  * Copies the configuration out under g_configMutex first, then prints without
  * holding it - the two mutexes are never held at the same time, which rules
@@ -103,7 +103,7 @@ static void prv_vPrintStatus(void)
 /**
  * @brief Parse and execute one complete input line.
  * @param pcLine Null-terminated input line without the line ending.
- * @author __________
+ * @author Shared Work
  *
  * @note The caller must NOT hold g_uartMutex - this function acquires it
  *       itself for its output.
@@ -170,7 +170,7 @@ void Shell_vHandleLine(const char *pcLine)
  * @param  psData Measurement record that was just received.
  * @return 1 if the value was consumed by the calibration (and must therefore
  *         NOT be printed as a distance), 0 otherwise.
- * @author __________
+ * @author Shared Work
  *
  * Once SHELL_CAL_SAMPLES valid samples have been collected, the offset is
  * computed as (target - average), the factor is reset to neutral and the

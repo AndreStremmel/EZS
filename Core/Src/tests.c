@@ -3,7 +3,7 @@
  * @file    tests.c
  * @brief   Dedicated integration tests for mutexes, semaphores and queues -
  *          implementation.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * Sequencing: TestMainTask advances a phase variable; TestHighTask and
@@ -74,7 +74,7 @@ static uint16_t s_u16TestsPassed = 0u;   ///< Number of test cases that passed
  * @brief Record the result of a test case (UART output + counters).
  * @param pcName Short description of the test case.
  * @param u8Ok   1 = passed, 0 = failed.
- * @author __________
+ * @author Berkay
  */
 static void prv_vReport(const char *pcName, uint8_t u8Ok)
 {
@@ -91,7 +91,7 @@ static void prv_vReport(const char *pcName, uint8_t u8Ok)
 /**
  * @brief Wait until a given test phase is reached.
  * @param u8Phase Phase number to wait for.
- * @author __________
+ * @author Berkay
  *
  * Polls via Scheduler_vNonBlockedDelay() so the waiting task passes through
  * the BLOCKED state and releases the CPU instead of spinning on it.
@@ -109,7 +109,7 @@ static void prv_vWaitForPhase(uint8_t u8Phase)
  * @param  pu8Flag     Flag to observe.
  * @param  u32MaxTicks Upper bound, so that a failing test cannot hang the run.
  * @return 1 if the flag was set, 0 on timeout.
- * @author __________
+ * @author Berkay
  */
 static uint8_t prv_u8WaitFlag(volatile uint8_t *pu8Flag, uint32_t u32MaxTicks)
 {
@@ -128,7 +128,7 @@ static uint8_t prv_u8WaitFlag(volatile uint8_t *pu8Flag, uint32_t u32MaxTicks)
 
 /**
  * @brief Initialise the test objects (mutexes, semaphore, queue).
- * @author __________
+ * @author Berkay
  *
  * Call instead of App_Resources_Init() when #OS_RUN_INTEGRATION_TESTS is set.
  */
@@ -153,7 +153,7 @@ void Tests_vInitResources(void)
 
 /**
  * @brief Equal-priority partner task used in the contention scenarios.
- * @author __________
+ * @author Berkay
  *
  * Waits for its phases and performs the counterpart of whatever TestMainTask
  * is currently testing, reporting back through s_ePeerResult and s_u8PeerDone.
@@ -244,7 +244,7 @@ void TestPeerTask(void)
 
 /**
  * @brief High-priority partner task used in the priority-ordering scenarios.
- * @author __________
+ * @author Berkay
  */
 void TestHighTask(void)
 {
@@ -285,7 +285,7 @@ void TestHighTask(void)
 /**
  * @brief Main test task: drives the phases, evaluates the results and prints
  *        them over UART.
- * @author __________
+ * @author Berkay
  *
  * Runs the test cases T1..T18 in order, then prints a summary and goes idle so
  * the trace can be closed cleanly in SystemView.

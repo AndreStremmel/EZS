@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    app_messages.h
  * @brief   Message and configuration types exchanged between the tasks.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Kept in a separate header so that both the producers and the consumers of a

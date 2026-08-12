@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    scheduler.c
  * @brief   Priority scheduler with round-robin - implementation.
- * @author  __________
+ * @author  Berkay
  * @date    Created on: May 3, 2026
  ******************************************************************************
  *
@@ -35,7 +35,7 @@ TCB_sctTCB_t* g_pNextTask;     // Task selected to run next
 
 /**
  * @brief Bring the scheduler into a defined state for the first dispatch.
- * @author __________
+ * @author Berkay
  *
  * g_pCurrentTask is set to the last slot (the idle task) so that the
  * round-robin search in Scheduler_pGetNextTask() starts at index 0.
@@ -53,7 +53,7 @@ void Scheduler_vInit(void)
 /**
  * @brief  Select the next task to run and publish it in g_pNextTask.
  * @return Pointer to the TCB of the selected task.
- * @author __________
+ * @author Berkay
  *
  * Two-stage selection: first find the highest priority among all Ready tasks,
  * then round-robin within that priority level starting at the slot after the
@@ -119,7 +119,7 @@ TCB_sctTCB_t* Scheduler_pGetNextTask(void)
 /**
  * @brief Decrement the delay counter of every blocked task and wake those
  *        whose counter reaches zero.
- * @author __________
+ * @author Berkay
  *
  * Called from the SysTick handler once per tick.
  */
@@ -143,7 +143,7 @@ void Scheduler_vCountdown(void) {
 /**
  * @brief Busy-wait delay: the calling task keeps the CPU for the whole time.
  * @param ticks Delay in SysTick ticks (milliseconds).
- * @author __________
+ * @author Berkay
  *
  * The task stays Running and can still be preempted by a higher priority task,
  * but it never yields voluntarily. Kept alongside the blocking variant so the
@@ -164,7 +164,7 @@ void Scheduler_vBlockedDelay(uint32_t ticks)
 /**
  * @brief Blocking delay: the calling task releases the CPU for the whole time.
  * @param ticks Delay in SysTick ticks (milliseconds).
- * @author __________
+ * @author Berkay
  */
 void Scheduler_vNonBlockedDelay(uint32_t ticks)
 {
@@ -194,7 +194,7 @@ void Scheduler_vNonBlockedDelay(uint32_t ticks)
 /**
  * @brief  Index of the currently running task within the tasks[] array.
  * @return Task index, usable as an ID for trace events and owner bookkeeping.
- * @author __________
+ * @author Berkay
  */
 uint8_t Scheduler_u8GetCurrentTaskIdx(void)
 {
@@ -206,7 +206,7 @@ uint8_t Scheduler_u8GetCurrentTaskIdx(void)
  * @param u32TimeoutTicks OS_WAIT_FOREVER = wait indefinitely, otherwise the
  *                        number of ticks after which SysTick wakes the task.
  * @param u32SysViewCause Reason code for SEGGER_SYSVIEW_OnTaskStopReady().
- * @author __________
+ * @author Berkay
  *
  * @warning Must be called from within a critical section.
  */
@@ -225,7 +225,7 @@ void Scheduler_vBlockCurrentTask(uint32_t u32TimeoutTicks, uint32_t u32SysViewCa
 
 /**
  * @brief Wait until the current task has been made runnable again.
- * @author __________
+ * @author Berkay
  */
 void Scheduler_vWaitWhileBlocked(void)
 {
@@ -240,7 +240,7 @@ void Scheduler_vWaitWhileBlocked(void)
 /**
  * @brief Wake a task up (Blocked -> Ready).
  * @param u8TaskIdx Index of the task in the tasks[] array.
- * @author __________
+ * @author Berkay
  *
  * Does nothing if the index is out of range or the task is not blocked.
  */
@@ -260,7 +260,7 @@ void Scheduler_vUnblockTask(uint8_t u8TaskIdx)
  * @brief  Remaining delay/timeout ticks of a task.
  * @param  u8TaskIdx Index of the task in the tasks[] array.
  * @return Remaining ticks, or 0 if no countdown runs or the index is invalid.
- * @author __________
+ * @author Berkay
  */
 uint32_t Scheduler_u32GetRemainingDelay(uint8_t u8TaskIdx)
 {

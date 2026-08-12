@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_semaphore.c
  * @brief   Counting semaphore - implementation.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * All take variants share prv_Take(). The central design decision is that a
@@ -29,7 +29,7 @@
 /**
  * @brief  Determine the task ID to report in trace events.
  * @return The current task index, or OS_TRACE_TASK_ISR when running in an ISR.
- * @author __________
+ * @author Berkay
  *
  * Needed because a give may come from interrupt context, where the "current
  * task" is whatever happened to be interrupted and would be misleading.
@@ -45,7 +45,7 @@ static uint8_t prv_u8TraceTask(void)
  * @param initialCount Count available right after initialisation.
  * @param maxCount     Maximum count the semaphore can reach.
  * @param u8TraceId    ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  */
 void OS_Semaphore_Init(OS_Semaphore_t *sem, uint8_t initialCount, uint8_t maxCount,
                        uint8_t u8TraceId)
@@ -62,7 +62,7 @@ void OS_Semaphore_Init(OS_Semaphore_t *sem, uint8_t initialCount, uint8_t maxCou
  * @param  u32TimeoutTicks Timeout in ticks, or OS_WAIT_FOREVER.
  * @param  u8NonBlocking   1 = return OS_WOULD_BLOCK instead of blocking.
  * @return OS_OK, OS_WOULD_BLOCK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  *
  * One pass through the loop:
  *  1. Critical section: clear our own wait bit (retry only), attempt the take.
@@ -151,7 +151,7 @@ static OS_Result_t prv_Take(OS_Semaphore_t *sem, uint32_t u32TimeoutTicks, uint8
  * @brief  Non-blocking take.
  * @param  sem Semaphore to take.
  * @return OS_OK or OS_WOULD_BLOCK.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Semaphore_TakeNonBlocking(OS_Semaphore_t *sem)
 {
@@ -162,7 +162,7 @@ OS_Result_t OS_Semaphore_TakeNonBlocking(OS_Semaphore_t *sem)
  * @brief  Blocking take: wait indefinitely for a count.
  * @param  sem Semaphore to take.
  * @return Always OS_OK.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Semaphore_TakeBlocking(OS_Semaphore_t *sem)
 {
@@ -174,7 +174,7 @@ OS_Result_t OS_Semaphore_TakeBlocking(OS_Semaphore_t *sem)
  * @param  sem             Semaphore to take.
  * @param  u32TimeoutTicks Maximum wait time in ticks.
  * @return OS_OK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  *
  * A timeout of 0 would block forever in the countdown logic, so it is mapped
  * to the non-blocking variant instead.
@@ -192,7 +192,7 @@ OS_Result_t OS_Semaphore_TakeTimeout(OS_Semaphore_t *sem, uint32_t u32TimeoutTic
  * @brief Give: increment the count (saturating at maxCount) and wake up every
  *        waiting task.
  * @param sem Semaphore to give.
- * @author __________
+ * @author Berkay
  *
  * ISR-safe. A give on an already full semaphore is discarded rather than
  * queued, and reported as OS_TRACE_EVT_SEM_GIVE_IGNORED so the loss is visible

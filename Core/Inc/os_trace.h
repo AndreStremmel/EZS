@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_trace.h
  * @brief   SystemView instrumentation for the TeSSLa verification - API.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * Registers a dedicated SystemView module "DOSRTOS" with named events for the
@@ -101,7 +101,7 @@ typedef enum
 
 /**
  * @brief Register the custom module with SystemView and send the task info.
- * @author __________
+ * @author Berkay
  *
  * @note Call AFTER SEGGER_SYSVIEW_Conf() and BEFORE Scheduler_vInit().
  */
@@ -109,7 +109,7 @@ void OS_Trace_Init(void);
 
 /**
  * @brief Send the task list (create + info + task map) to SystemView.
- * @author __________
+ * @author Berkay
  *
  * @note Must also be registered as the pfSendTaskList callback in the
  *       SEGGER_SYSVIEW configuration, so a host connecting mid-run still
@@ -121,7 +121,7 @@ void OS_Trace_vSendTaskList(void);
  * @brief Emit a raw module event with one parameter.
  * @param evt Event ID.
  * @param p0  First parameter.
- * @author __________
+ * @author Berkay
  */
 void OS_Trace_Record1(OS_TraceEvent_t evt, uint32_t p0);
 
@@ -130,7 +130,7 @@ void OS_Trace_Record1(OS_TraceEvent_t evt, uint32_t p0);
  * @param evt Event ID.
  * @param p0  First parameter.
  * @param p1  Second parameter.
- * @author __________
+ * @author Berkay
  */
 void OS_Trace_Record2(OS_TraceEvent_t evt, uint32_t p0, uint32_t p1);
 
@@ -140,7 +140,7 @@ void OS_Trace_Record2(OS_TraceEvent_t evt, uint32_t p0, uint32_t p1);
  * @param p0  First parameter.
  * @param p1  Second parameter.
  * @param p2  Third parameter.
- * @author __________
+ * @author Berkay
  */
 void OS_Trace_Record3(OS_TraceEvent_t evt, uint32_t p0, uint32_t p1, uint32_t p2);
 
@@ -149,7 +149,7 @@ void OS_Trace_Record3(OS_TraceEvent_t evt, uint32_t p0, uint32_t p1, uint32_t p2
  * @param  pData Start of the range.
  * @param  len   Length of the range in bytes.
  * @return Checksum value.
- * @author __________
+ * @author Berkay
  *
  * Logged with every queue send and receive so the TeSSLa specification can
  * verify FIFO order and payload integrity end to end.

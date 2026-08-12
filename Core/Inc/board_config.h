@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    board_config.h
  * @brief   Central pin and peripheral assignment for the STM32L475VG board.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Targets the B-L475E-IOT01A Discovery kit. If the project is moved to a

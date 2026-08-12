@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    app_resources.h
  * @brief   Central declaration of all shared kernel objects of the application.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Every queue, mutex and semaphore used by more than one module is declared
@@ -43,7 +43,7 @@ extern User_Data_t g_userConfig;
 
 /**
  * @brief Initialise all shared queues, mutexes and semaphores.
- * @author __________
+ * @author Andre
  *
  * @note Must run before the scheduler starts, i.e. before any task can touch
  *       one of these objects.

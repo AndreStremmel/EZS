@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    tests.h
  * @brief   Dedicated integration tests for mutexes, semaphores and queues.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * PURPOSE
@@ -56,7 +56,7 @@
 
 /**
  * @brief Initialise the test objects (mutex, semaphore, queue).
- * @author __________
+ * @author Berkay
  *
  * Call instead of App_Resources_Init() when #OS_RUN_INTEGRATION_TESTS is
  * active. Additionally creates a small test queue with capacity
@@ -67,7 +67,7 @@ void Tests_vInitResources(void);
 
 /**
  * @brief High-priority contender used for the priority-ordering scenarios.
- * @author __________
+ * @author Berkay
  *
  * Runs in task slot 0 (priority 3).
  */
@@ -76,7 +76,7 @@ void TestHighTask(void);
 /**
  * @brief Main test task: drives the test phases, evaluates results and prints
  *        them over UART.
- * @author __________
+ * @author Berkay
  *
  * Runs in task slot 1 (priority 1).
  */
@@ -85,7 +85,7 @@ void TestMainTask(void);
 /**
  * @brief Equal-priority partner used for the contention and round-robin
  *        scenarios.
- * @author __________
+ * @author Berkay
  *
  * Runs in task slot 2 (priority 1).
  */

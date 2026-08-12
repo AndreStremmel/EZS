@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_mutex.h
  * @brief   Binary mutex with owner tracking - API.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * A mutex differs from a binary semaphore in that it has an owner: only the
@@ -41,7 +41,7 @@ typedef struct
  * @brief Initialise a mutex to the unlocked state.
  * @param mutex     Mutex to initialise.
  * @param u8TraceId ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  */
 void OS_Mutex_Init(OS_Mutex_t *mutex, uint8_t u8TraceId);
 
@@ -50,7 +50,7 @@ void OS_Mutex_Init(OS_Mutex_t *mutex, uint8_t u8TraceId);
  * @param  mutex Mutex to lock.
  * @return OS_OK if the mutex was acquired, OS_WOULD_BLOCK if it is held by
  *         another task.
- * @author __________
+ * @author Andre
  *
  * On success the calling task automatically becomes the owner.
  */
@@ -60,7 +60,7 @@ OS_Result_t OS_Mutex_LockNonBlocking(OS_Mutex_t *mutex);
  * @brief  Blocking lock: block the calling task until the mutex becomes free.
  * @param  mutex Mutex to lock.
  * @return Always OS_OK (the call only returns once the mutex is held).
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Mutex_LockBlocking(OS_Mutex_t *mutex);
 
@@ -69,7 +69,7 @@ OS_Result_t OS_Mutex_LockBlocking(OS_Mutex_t *mutex);
  * @param  mutex           Mutex to lock.
  * @param  u32TimeoutTicks Maximum wait time in SysTick ticks.
  * @return OS_OK if the mutex was acquired, OS_TIMEOUT if the time expired.
- * @author __________
+ * @author Andre
  *
  * The task is woken up either when the mutex is released or when the timeout
  * elapses, whichever happens first.
@@ -79,7 +79,7 @@ OS_Result_t OS_Mutex_LockTimeout(OS_Mutex_t *mutex, uint32_t u32TimeoutTicks);
 /**
  * @brief Unlock the mutex and wake up every task waiting for it.
  * @param mutex Mutex to release.
- * @author __________
+ * @author Andre
  *
  * Only the owning task may unlock; calls from any other task are ignored.
  */

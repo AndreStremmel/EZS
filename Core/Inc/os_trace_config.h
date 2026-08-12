@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_trace_config.h
  * @brief   Central switches for the SystemView instrumentation.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * PURPOSE

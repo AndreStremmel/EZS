@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_queue.c
  * @brief   Fixed-size message queue (ring buffer) - implementation.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Send and receive share one implementation in prv_Transfer(), parameterised by
@@ -68,7 +68,7 @@ void OS_Queue_Init(OS_Queue_t *queue,
  * @brief Copy a message into the buffer, advance head and wake receivers.
  * @param queue Target queue, must have free space.
  * @param item  Message to copy in.
- * @author __________
+ * @author Berkay
  *
  * @warning Caller must hold a critical section and must have verified that
  *          the queue is not full.
@@ -101,7 +101,7 @@ static void prv_DoSend(OS_Queue_t *queue, const void *item)
  * @brief Copy a message out of the buffer, advance tail and wake senders.
  * @param queue Source queue, must not be empty.
  * @param item  Destination buffer for the message.
- * @author __________
+ * @author Berkay
  *
  * @warning Caller must hold a critical section and must have verified that
  *          the queue is not empty.
@@ -138,7 +138,7 @@ static void prv_DoReceive(OS_Queue_t *queue, void *item)
  * @param  u32TimeoutTicks Timeout in ticks, or OS_WAIT_FOREVER.
  * @param  u8NonBlocking   1 = return OS_WOULD_BLOCK instead of blocking.
  * @return OS_OK, OS_WOULD_BLOCK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  *
  * Same retry pattern as the semaphore and mutex:
  *   condition satisfied -> perform the operation -> OS_OK
@@ -241,7 +241,7 @@ static OS_Result_t prv_Transfer(OS_Queue_t *queue,
  * @param  queue Target queue.
  * @param  item  Message to enqueue.
  * @return OS_OK or OS_WOULD_BLOCK (queue full).
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_SendNonBlocking(OS_Queue_t *queue, const void *item)
 {
@@ -253,7 +253,7 @@ OS_Result_t OS_Queue_SendNonBlocking(OS_Queue_t *queue, const void *item)
  * @param  queue Target queue.
  * @param  item  Message to enqueue.
  * @return Always OS_OK.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_SendBlocking(OS_Queue_t *queue, const void *item)
 {
@@ -266,7 +266,7 @@ OS_Result_t OS_Queue_SendBlocking(OS_Queue_t *queue, const void *item)
  * @param  item            Message to enqueue.
  * @param  u32TimeoutTicks Maximum wait time in ticks.
  * @return OS_OK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Queue_SendTimeout(OS_Queue_t *queue, const void *item, uint32_t u32TimeoutTicks)
 {
@@ -282,7 +282,7 @@ OS_Result_t OS_Queue_SendTimeout(OS_Queue_t *queue, const void *item, uint32_t u
  * @param  queue Source queue.
  * @param  item  Destination buffer.
  * @return OS_OK or OS_WOULD_BLOCK (queue empty).
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Queue_ReceiveNonBlocking(OS_Queue_t *queue, void *item)
 {
@@ -294,7 +294,7 @@ OS_Result_t OS_Queue_ReceiveNonBlocking(OS_Queue_t *queue, void *item)
  * @param  queue Source queue.
  * @param  item  Destination buffer.
  * @return Always OS_OK.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Queue_ReceiveBlocking(OS_Queue_t *queue, void *item)
 {
@@ -307,7 +307,7 @@ OS_Result_t OS_Queue_ReceiveBlocking(OS_Queue_t *queue, void *item)
  * @param  item            Destination buffer.
  * @param  u32TimeoutTicks Maximum wait time in ticks.
  * @return OS_OK or OS_TIMEOUT.
- * @author __________
+ * @author Berkay
  */
 OS_Result_t OS_Queue_ReceiveTimeout(OS_Queue_t *queue, void *item, uint32_t u32TimeoutTicks)
 {
@@ -322,7 +322,7 @@ OS_Result_t OS_Queue_ReceiveTimeout(OS_Queue_t *queue, void *item, uint32_t u32T
  * @brief  Check whether the queue currently holds no messages.
  * @param  queue Queue to inspect.
  * @return true if empty.
- * @author __________
+ * @author Andre
  */
 bool OS_Queue_IsEmpty(const OS_Queue_t *queue)
 {
@@ -333,7 +333,7 @@ bool OS_Queue_IsEmpty(const OS_Queue_t *queue)
  * @brief  Check whether the queue has reached its capacity.
  * @param  queue Queue to inspect.
  * @return true if full.
- * @author __________
+ * @author Andre
  */
 bool OS_Queue_IsFull(const OS_Queue_t *queue)
 {

@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    stack.h
  * @brief   Initial task stack frame setup - API.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * Before a task can be dispatched for the very first time, its stack has to
@@ -25,7 +25,7 @@
  * @param pTcb           TCB of the task; its stack pointer field is updated to
  *                       point at the top of the prepared frame.
  * @param pvTaskPointer  Entry function of the task, placed in the PC slot.
- * @author __________
+ * @author Berkay
  *
  * @note Call this after Tasks_vInitTaskArray() and before Scheduler_vInit().
  */

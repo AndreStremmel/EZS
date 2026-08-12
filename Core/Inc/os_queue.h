@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_queue.h
  * @brief   Fixed-size message queue (ring buffer) - API.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * The queue carries messages by value: every send copies u32ItemSize bytes
@@ -60,7 +60,7 @@ typedef struct
  * @param itemSize  Size of one message in bytes.
  * @param capacity  Number of messages the buffer can hold.
  * @param u8TraceId ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  */
 void OS_Queue_Init(OS_Queue_t *queue,
                    uint8_t *buffer,
@@ -75,7 +75,7 @@ void OS_Queue_Init(OS_Queue_t *queue,
  * @param  queue Target queue.
  * @param  item  Message to copy into the queue (itemSize bytes are read).
  * @return OS_OK on success, OS_WOULD_BLOCK if the queue is full.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_SendNonBlocking(OS_Queue_t *queue, const void *item);
 
@@ -84,7 +84,7 @@ OS_Result_t OS_Queue_SendNonBlocking(OS_Queue_t *queue, const void *item);
  * @param  queue Target queue.
  * @param  item  Message to copy into the queue (itemSize bytes are read).
  * @return Always OS_OK.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_SendBlocking(OS_Queue_t *queue, const void *item);
 
@@ -94,7 +94,7 @@ OS_Result_t OS_Queue_SendBlocking(OS_Queue_t *queue, const void *item);
  * @param  item            Message to copy into the queue.
  * @param  u32TimeoutTicks Maximum wait time in SysTick ticks.
  * @return OS_OK if the message was enqueued, OS_TIMEOUT otherwise.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_SendTimeout(OS_Queue_t *queue, const void *item, uint32_t u32TimeoutTicks);
 
@@ -105,7 +105,7 @@ OS_Result_t OS_Queue_SendTimeout(OS_Queue_t *queue, const void *item, uint32_t u
  * @param  queue Source queue.
  * @param  item  Destination buffer, receives itemSize bytes.
  * @return OS_OK on success, OS_WOULD_BLOCK if the queue is empty.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_ReceiveNonBlocking(OS_Queue_t *queue, void *item);
 
@@ -114,7 +114,7 @@ OS_Result_t OS_Queue_ReceiveNonBlocking(OS_Queue_t *queue, void *item);
  * @param  queue Source queue.
  * @param  item  Destination buffer, receives itemSize bytes.
  * @return Always OS_OK.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Queue_ReceiveBlocking(OS_Queue_t *queue, void *item);
 
@@ -124,7 +124,7 @@ OS_Result_t OS_Queue_ReceiveBlocking(OS_Queue_t *queue, void *item);
  * @param  item            Destination buffer, receives itemSize bytes.
  * @param  u32TimeoutTicks Maximum wait time in SysTick ticks.
  * @return OS_OK if a message was dequeued, OS_TIMEOUT otherwise.
- * @author __________
+ * @author Andre
  *
  * Used by UartShellTask so it can keep polling the shell input even while no
  * measurement results are arriving.
@@ -137,7 +137,7 @@ OS_Result_t OS_Queue_ReceiveTimeout(OS_Queue_t *queue, void *item, uint32_t u32T
  * @brief  Check whether the queue currently holds no messages.
  * @param  queue Queue to inspect.
  * @return true if empty, false otherwise.
- * @author __________
+ * @author Andre
  */
 bool OS_Queue_IsEmpty(const OS_Queue_t *queue);
 
@@ -145,7 +145,7 @@ bool OS_Queue_IsEmpty(const OS_Queue_t *queue);
  * @brief  Check whether the queue has reached its capacity.
  * @param  queue Queue to inspect.
  * @return true if full, false otherwise.
- * @author __________
+ * @author Andre
  */
 bool OS_Queue_IsFull(const OS_Queue_t *queue);
 

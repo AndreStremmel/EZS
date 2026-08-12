@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    hcsr04.h
  * @brief   Interrupt-driven driver for the HC-SR04 ultrasonic sensor - API.
- * @author  __________
+ * @author  Shared Work
  ******************************************************************************
  *
  * Sequence of a single measurement, as performed by the sensor task:
@@ -38,7 +38,7 @@
 /**
  * @brief Initialise the driver: enable the DWT cycle counter, configure the
  *        EXTI priority and drive the trigger pin low.
- * @author __________
+ * @author Shared Work
  *
  * @note The cycle counter is enabled defensively - SystemView normally turns
  *       it on already - but it is never reset, see hcsr04.c.
@@ -47,21 +47,21 @@ void HCSR04_vInit(void);
 
 /**
  * @brief Emit the trigger pulse and arm the edge capture for one measurement.
- * @author __________
+ * @author Shared Work
  */
 void HCSR04_vStartMeasurement(void);
 
 /**
  * @brief  Width of the last measured echo pulse in microseconds.
  * @return Pulse width in us; only meaningful after a successful semaphore take.
- * @author __________
+ * @author Shared Work
  */
 uint32_t HCSR04_u32GetPulseUs(void);
 
 /**
  * @brief  Uncalibrated distance derived from the last echo pulse.
  * @return Distance in mm, without the offset and factor from g_userConfig.
- * @author __________
+ * @author Shared Work
  */
 uint32_t HCSR04_u32GetDistanceMmRaw(void);
 
@@ -69,13 +69,13 @@ uint32_t HCSR04_u32GetDistanceMmRaw(void);
  * @brief  Plausibility check on the last measurement.
  * @return 1 if the pulse width was outside HCSR04_PULSE_MIN_US ..
  *         HCSR04_PULSE_MAX_US, 0 otherwise.
- * @author __________
+ * @author Shared Work
  */
 uint8_t HCSR04_u8IsOutOfRange(void);
 
 /**
  * @brief Edge handler for the echo pin.
- * @author __________
+ * @author Shared Work
  *
  * Call from HAL_GPIO_EXTI_Callback() whenever the ECHO pin triggers an edge.
  * Timestamps the rising edge, computes the pulse width on the falling edge

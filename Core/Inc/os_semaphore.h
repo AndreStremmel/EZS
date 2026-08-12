@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    os_semaphore.h
  * @brief   Counting semaphore - API.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Used in this project for two distinct purposes:
@@ -43,7 +43,7 @@ typedef struct
  * @param initialCount Count available right after initialisation.
  * @param maxCount     Maximum count the semaphore can reach.
  * @param u8TraceId    ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  *
  * For ISR-to-task signalling use initialCount = 0 and maxCount = 1.
  */
@@ -54,7 +54,7 @@ void OS_Semaphore_Init(OS_Semaphore_t *sem, uint8_t initialCount, uint8_t maxCou
  * @brief  Non-blocking take: decrement the count if possible, return at once.
  * @param  sem Semaphore to take.
  * @return OS_OK if a count was taken, OS_WOULD_BLOCK if the count was zero.
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Semaphore_TakeNonBlocking(OS_Semaphore_t *sem);
 
@@ -62,7 +62,7 @@ OS_Result_t OS_Semaphore_TakeNonBlocking(OS_Semaphore_t *sem);
  * @brief  Blocking take: block the calling task until a count is available.
  * @param  sem Semaphore to take.
  * @return Always OS_OK (the call only returns once a count was taken).
- * @author __________
+ * @author Andre
  */
 OS_Result_t OS_Semaphore_TakeBlocking(OS_Semaphore_t *sem);
 
@@ -71,7 +71,7 @@ OS_Result_t OS_Semaphore_TakeBlocking(OS_Semaphore_t *sem);
  * @param  sem             Semaphore to take.
  * @param  u32TimeoutTicks Maximum wait time in SysTick ticks.
  * @return OS_OK if a count was taken, OS_TIMEOUT if the time expired.
- * @author __________
+ * @author Andre
  *
  * The task is woken up either by a give or by the timeout, whichever comes
  * first. This is the variant the sensor task uses to survive a missing echo.
@@ -82,7 +82,7 @@ OS_Result_t OS_Semaphore_TakeTimeout(OS_Semaphore_t *sem, uint32_t u32TimeoutTic
  * @brief Give: increment the count (saturating at maxCount) and wake up every
  *        task waiting on this semaphore.
  * @param sem Semaphore to give.
- * @author __________
+ * @author Andre
  *
  * ISR-safe: may be called from interrupt context, which is how the HC-SR04
  * echo ISR hands the completed measurement over to the sensor task.

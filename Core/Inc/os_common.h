@@ -3,7 +3,7 @@
  * @file    os_common.h
  * @brief   Shared types and critical-section helpers for the kernel objects
  *          (semaphore, mutex, queue).
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * Every kernel object in this RTOS reports its outcome through the same
@@ -37,7 +37,7 @@ typedef enum
 /**
  * @brief  Enter a critical section by disabling interrupts.
  * @return Previous PRIMASK value; must be passed back to OS_vExitCritical().
- * @author __________
+ * @author Berkay
  *
  * PRIMASK is saved instead of simply enabling interrupts on exit, so that
  * nested critical sections (e.g. a call made from an ISR where interrupts are
@@ -53,7 +53,7 @@ static inline uint32_t OS_u32EnterCritical(void)
 /**
  * @brief  Leave a critical section by restoring the previous interrupt state.
  * @param  u32PriMask PRIMASK value returned by OS_u32EnterCritical().
- * @author __________
+ * @author Berkay
  */
 static inline void OS_vExitCritical(uint32_t u32PriMask)
 {
@@ -63,7 +63,7 @@ static inline void OS_vExitCritical(uint32_t u32PriMask)
 /**
  * @brief  Check whether the code is currently executing in ISR context.
  * @return 1 if running inside an exception handler (IPSR != 0), 0 otherwise.
- * @author __________
+ * @author Berkay
  *
  * Used among other things to tag trace events raised from ISRs correctly,
  * since there is no "current task" to attribute them to.

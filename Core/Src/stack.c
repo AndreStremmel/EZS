@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    stack.c
  * @brief   Initial task stack frame setup - implementation.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * Prepares the initial stack frame of a task so that it looks exactly as if
@@ -26,7 +26,7 @@
  * @param pTcb          TCB of the task; u32TaskSP is set to the top of the
  *                      prepared frame.
  * @param pvTaskPointer Entry function of the task, placed in the PC slot.
- * @author __________
+ * @author Berkay
  */
 void Stack_vInit(TCB_sctTCB_t* pTcb, void (*pvTaskPointer)(void))
 {

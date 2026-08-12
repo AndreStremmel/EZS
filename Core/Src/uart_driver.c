@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    uart_driver.c
  * @brief   UART abstraction - implementation.
- * @author  __________
+ * @author  Berkay
  ******************************************************************************
  *
  * RX architecture: interrupt-driven ring buffer
@@ -54,7 +54,7 @@ static uint8_t           rx_byte;        /* HAL receive buffer (1 byte)    */
 /**
  * @brief Enable the UART interrupt in the NVIC and start the first
  *        interrupt-driven byte reception.
- * @author __________
+ * @author Berkay
  *
  * Must be called in main.c after MX_USARTx_UART_Init():
  * @code
@@ -84,7 +84,7 @@ void UART_Init(void)
  * @brief Called by the HAL after every received byte: stores it in the ring
  *        buffer and re-arms the next reception.
  * @param huart UART handle that raised the interrupt.
- * @author __________
+ * @author Berkay
  *
  * @note This overrides the weak stub in stm32l4xx_hal_uart.c. It is invoked
  *       from USART1_IRQHandler via HAL_UART_IRQHandler().
@@ -121,7 +121,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 /**
  * @brief Send a null-terminated string, blocking until it has been written.
  * @param str String to send; NULL and empty strings are ignored.
- * @author __________
+ * @author Berkay
  *
  * @warning Task context only, and only while the caller holds g_uartMutex.
  */
@@ -142,7 +142,7 @@ void UART_SendString(const char *str)
 /**
  * @brief Send an unsigned number as a decimal string.
  * @param value Value to print (0..65535).
- * @author __________
+ * @author Berkay
  *
  * Implemented by hand rather than via printf to avoid pulling the newlib
  * formatting machinery (and its stack usage) into the task stacks.
@@ -187,7 +187,7 @@ void UART_SendUInt(uint16_t value)
 /**
  * @brief  Check whether a complete input line is waiting in the ring buffer.
  * @return true if the buffer holds a line terminated by \\r or \\n.
- * @author __________
+ * @author Berkay
  *
  * Scans without consuming, so the caller can decide whether to read the line.
  */
@@ -212,7 +212,7 @@ bool UART_LineAvailable(void)
  * @param buf Destination buffer; receives the line without \\r\\n, always
  *            null-terminated.
  * @param len Size of @p buf in bytes; longer lines are truncated.
- * @author __________
+ * @author Berkay
  */
 void UART_ReadLine(char *buf, size_t len)
 {

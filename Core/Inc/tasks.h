@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    tasks.h
  * @brief   Application task set of the final project - declarations.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Index convention (IMPORTANT for both the scheduler and the TeSSLa analysis):
@@ -35,7 +35,7 @@ extern TCB_sctTCB_t tasks[NUM_TASKS];
 
 /**
  * @brief Periodically triggers the HC-SR04 and publishes raw measurements.
- * @author __________
+ * @author Andre
  *
  * Sends SensorData_t messages into g_sensorQueue.
  */
@@ -43,7 +43,7 @@ void SensorTask(void);
 
 /**
  * @brief Converts raw measurements into calibrated distances.
- * @author __________
+ * @author Andre
  *
  * Receives from g_sensorQueue, sends ProcessedData_t into g_processedQueue.
  */
@@ -51,7 +51,7 @@ void ProcTask(void);
 
 /**
  * @brief Prints processed measurements over UART and services the shell.
- * @author __________
+ * @author Andre
  *
  * Receives from g_processedQueue and polls the shell for user input.
  */
@@ -59,7 +59,7 @@ void UartShellTask(void);
 
 /**
  * @brief Lowest priority fallback task that runs when nothing else is ready.
- * @author __________
+ * @author Andre
  *
  * @note Never blocks - the scheduler depends on it always being runnable.
  */
@@ -67,7 +67,7 @@ void IdleTask(void);
 
 /**
  * @brief Populate the tasks[] array with IDs, priorities and initial states.
- * @author __________
+ * @author Andre
  *
  * @note Must be called BEFORE Stack_vInit(), since the stack setup relies on
  *       the TCB fields filled in here.
