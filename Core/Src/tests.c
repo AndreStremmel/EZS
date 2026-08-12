@@ -1,20 +1,15 @@
 /**
- ******************************************************************************
  * @file    tests.c
- * @brief   Dedicated integration tests for mutexes, semaphores and queues -
- *          implementation.
- * @author  Berkay
- ******************************************************************************
+ * @brief   Dedizierte Integrationstests fuer Mutexe, Semaphoren und Queues.
+ * @author  TODO: Name eintragen
  *
- * Sequencing: TestMainTask advances a phase variable; TestHighTask and
- * TestPeerTask each wait for "their" phase and play their role in it. The
- * synchronisation deliberately uses only non-blocking delays and the phase
- * variable - no additional kernel objects - so that the tests do not depend on
- * the very mechanisms they are meant to verify.
+ * Ablaufsteuerung: TestMainTask schaltet eine Phasenvariable weiter;
+ * TestHighTask und TestPeerTask warten jeweils auf "ihre" Phase und
+ * spielen darin ihre Rolle. Die Synchronisation laeuft ueber
+ * NonBlockedDelays und die Phasenvariable - bewusst ohne zusaetzliche
+ * Kernel-Objekte, damit die Tests nicht das pruefen, was sie benutzen.
  *
- * @see tests.h for activation and for how to evaluate the results.
- *
- ******************************************************************************
+ * @see tests.h fuer Aktivierung und Auswertung.
  */
 
 #include "tests.h"
@@ -31,50 +26,58 @@
 #include "uart_driver.h"
 
 /* ==========================================================================
- * Test objects
+ * Testobjekte
  *
- * The trace IDs are deliberately identical to those of the application
- * objects (see tests.h), so the existing TeSSLa specs apply unchanged.
+ * Trace-IDs bewusst identisch zu den Applikationsobjekten (siehe
+ * tests.h): so greifen die bestehenden TeSSLa-Specs unveraendert.
  * ========================================================================== */
 
-/// Mutex for the contention/blocking/timeout tests (trace ID as g_configMutex)
+/// Mutex fuer Konkurrenz-/Blocking-/Timeout-Tests (Trace-ID wie g_configMutex)
 static OS_Mutex_t     s_testMutex;
-/// Mutex guarding the UART output of the test results (trace ID as g_uartMutex)
+/// Mutex fuer die UART-Ausgabe der Testergebnisse (Trace-ID wie g_uartMutex)
 static OS_Mutex_t     s_testUartMutex;
-/// Binary semaphore for the blocking/timeout/double-give tests
+/// Binaere Semaphore fuer Blocking-/Timeout-/Doppel-Give-Tests
 static OS_Semaphore_t s_testSem;
-/// Small queue so that "full" is reachable in reasonable time
+/// Kleine Queue, damit "voll" in vertretbarer Zeit erreichbar ist
 static OS_Queue_t     s_testQueue;
-/// Storage backing the test queue (uint32_t messages)
+/// Puffer der Test-Queue (uint32_t-Nachrichten)
 static uint32_t       s_au32QueueBuf[TEST_QUEUE_CAPACITY];
 
 /* ==========================================================================
- * Sequencing and results
+ * Ablaufsteuerung und Ergebnisse
  * ========================================================================== */
 
-/// Current test phase; only ever incremented by TestMainTask.
+/// Aktuelle Testphase; wird nur von TestMainTask erhoeht.
 static volatile uint8_t  s_u8Phase      = 0u;
-/// Completion flags reported back by the partner tasks to TestMainTask.
+/* Rundenzaehler: macht Phasenwerte ueber mehrere Testrunden hinweg
+ * eindeutig. Ohne ihn kann ein Task, der frueh in der Schleife auf eine
+ * niedrige Phasennummer wartet (z.B. TestHighTask auf Phase 4), nicht
+ * unterscheiden, ob diese Phase gerade neu gesetzt wurde oder noch von
+ * der VORHERIGEN Runde stammt - er pollt dann sofort wieder positiv an
+ * und rennt der naechsten Runde davon, wodurch er als hochpriorer Task
+ * TestMainTask kontinuierlich CPU-Zeit wegnimmt (Live-Lock unter Last,
+ * insbesondere durch zusaetzlichen SystemView-Trace-Overhead). */
+static volatile uint16_t s_u16Round     = 0u;
+/// Rueckmeldungen der Partnertasks an TestMainTask.
 static volatile uint8_t  s_u8PeerDone   = 0u;
 static volatile uint8_t  s_u8HighDone   = 0u;
-/// Result of the sub-steps that are executed inside the partner tasks.
+/// Ergebnisse einzelner Teilschritte, die in Partnertasks anfallen.
 static volatile OS_Result_t s_ePeerResult = OS_OK;
-/// Order log for the priority test (1 = High, 2 = Peer).
+/// Reihenfolge-Protokoll fuer den Prioritaetstest (1 = High, 2 = Peer).
 static volatile uint8_t  s_au8LockOrder[4];
 static volatile uint8_t  s_u8LockOrderIdx = 0u;
 
-static uint16_t s_u16TestsRun    = 0u;   ///< Number of test cases executed
-static uint16_t s_u16TestsPassed = 0u;   ///< Number of test cases that passed
+static uint16_t s_u16TestsRun    = 0u;
+static uint16_t s_u16TestsPassed = 0u;
 
 /* ==========================================================================
- * Helper functions
+ * Hilfsfunktionen
  * ========================================================================== */
 
 /**
- * @brief Record the result of a test case (UART output + counters).
- * @param pcName Short description of the test case.
- * @param u8Ok   1 = passed, 0 = failed.
- * @author Berkay
+ * @brief Ergebnis eines Testfalls protokollieren (UART + Zaehler).
+ * @param pcName Kurzbeschreibung des Testfalls.
+ * @param u8Ok   1 = bestanden, 0 = fehlgeschlagen.
  */
 static void prv_vReport(const char *pcName, uint8_t u8Ok)
 {
@@ -89,27 +92,39 @@ static void prv_vReport(const char *pcName, uint8_t u8Ok)
 }
 
 /**
- * @brief Wait until a given test phase is reached.
- * @param u8Phase Phase number to wait for.
- * @author Berkay
+ * @brief Auf das Erreichen einer Phase warten (nicht-blockierend pollend).
+ * @param u8Phase Erwartete Phasennummer.
  *
- * Polls via Scheduler_vNonBlockedDelay() so the waiting task passes through
- * the BLOCKED state and releases the CPU instead of spinning on it.
+ * Nutzt Scheduler_vNonBlockedDelay(), damit der wartende Task den
+ * BLOCKED-Zustand durchlaeuft und die CPU freigibt.
  */
-static void prv_vWaitForPhase(uint8_t u8Phase)
+/**
+ * @brief Auf das Erreichen einer Phase IN DER AKTUELLEN RUNDE warten.
+ * @param u8Phase        Erwartete Phasennummer.
+ * @param pu16LastRound  Zeiger auf die zuletzt von DIESEM Task gesehene
+ *                        Rundennummer (ein eigenes statisches uint16_t
+ *                        je Aufrufer/Wartepunkt) - wird nach Rueckkehr
+ *                        aktualisiert.
+ *
+ * Ohne den Rundenvergleich koennte ein Task auf eine Phase anspringen,
+ * die noch von der VORHERIGEN Runde stammt (der Phasenwert wird pro
+ * Runde wiederverwendet). Das fuehrt unter Last zu einem Live-Lock,
+ * siehe Kommentar bei s_u16Round.
+ */
+static void prv_vWaitForPhase(uint8_t u8Phase, volatile uint16_t *pu16LastRound)
 {
-    while (s_u8Phase != u8Phase)
+    while ((s_u8Phase != u8Phase) || (s_u16Round == *pu16LastRound))
     {
-        Scheduler_vNonBlockedDelay(1u);
+        Scheduler_vNonBlockedDelay(10u);
     }
+    *pu16LastRound = s_u16Round;
 }
 
 /**
- * @brief  Wait until a partner task has set its completion flag.
- * @param  pu8Flag     Flag to observe.
- * @param  u32MaxTicks Upper bound, so that a failing test cannot hang the run.
- * @return 1 if the flag was set, 0 on timeout.
- * @author Berkay
+ * @brief Warten, bis ein Partnertask sein Fertig-Flag gesetzt hat.
+ * @param pu8Flag Zeiger auf das zu beobachtende Flag.
+ * @param u32MaxTicks Obergrenze, damit ein Fehler nicht zum Haenger fuehrt.
+ * @return 1, wenn das Flag gesetzt wurde, 0 bei Zeitueberschreitung.
  */
 static uint8_t prv_u8WaitFlag(volatile uint8_t *pu8Flag, uint32_t u32MaxTicks)
 {
@@ -123,21 +138,15 @@ static uint8_t prv_u8WaitFlag(volatile uint8_t *pu8Flag, uint32_t u32MaxTicks)
 }
 
 /* ==========================================================================
- * Initialisation
+ * Initialisierung
  * ========================================================================== */
 
-/**
- * @brief Initialise the test objects (mutexes, semaphore, queue).
- * @author Berkay
- *
- * Call instead of App_Resources_Init() when #OS_RUN_INTEGRATION_TESTS is set.
- */
 void Tests_vInitResources(void)
 {
     OS_Mutex_Init(&s_testMutex,     OS_TRACE_MTX_CONFIG);
     OS_Mutex_Init(&s_testUartMutex, OS_TRACE_MTX_UART);
 
-    /* Binary semaphore: initial count 0 (empty), maximum 1 */
+    /* Binaere Semaphore: Startwert 0 (leer), Maximum 1 */
     OS_Semaphore_Init(&s_testSem, 0u, 1u, OS_TRACE_SEM_ECHO);
 
     OS_Queue_Init(&s_testQueue,
@@ -148,51 +157,59 @@ void Tests_vInitResources(void)
 }
 
 /* ==========================================================================
- * TestPeerTask - equal-priority contender (slot 2, prio 1)
+ * TestPeerTask - gleichpriorer Konkurrent (Slot 2, Prio 1)
  * ========================================================================== */
 
-/**
- * @brief Equal-priority partner task used in the contention scenarios.
- * @author Berkay
- *
- * Waits for its phases and performs the counterpart of whatever TestMainTask
- * is currently testing, reporting back through s_ePeerResult and s_u8PeerDone.
- */
 void TestPeerTask(void)
 {
     for (;;)
     {
-        /* --- Phase 2: the mutex is held by Main -> the non-blocking lock
-         *              must fail and the timeout must expire. ----------- */
-        prv_vWaitForPhase(2u);
+        /* --- Phase 2: Mutex ist von Main gehalten -> NonBlocking muss
+         *              fehlschlagen, Timeout muss ablaufen. ------------- */
+        { static volatile uint16_t s_u16LastR_peer2 = 0u; prv_vWaitForPhase(2u, &s_u16LastR_peer2); }
         s_ePeerResult = OS_Mutex_LockNonBlocking(&s_testMutex);
         s_u8PeerDone  = 1u;
 
-        prv_vWaitForPhase(3u);
-        /* Timeout variant: wait 20 ticks while the mutex stays held */
+        { static volatile uint16_t s_u16LastR_peer3 = 0u; prv_vWaitForPhase(3u, &s_u16LastR_peer3); }
+        /* Timeout-Variante: 20 Ticks warten, Mutex bleibt belegt */
         s_ePeerResult = OS_Mutex_LockTimeout(&s_testMutex, 20u);
         s_u8PeerDone  = 1u;
 
-        /* --- Phase 4: concurrent blocking acquire.
-         * Main still holds the mutex; Peer blocks here and is only woken
-         * after the release. High does the same -> the resulting order
-         * shows whether the priority is honoured. --------------------- */
-        prv_vWaitForPhase(4u);
+        /* --- Phase 4: konkurrierendes blockierendes Acquire.
+         * Main haelt den Mutex noch; Peer blockiert hier und wird erst
+         * nach der Freigabe geweckt. High macht dasselbe -> die
+         * Reihenfolge zeigt, ob die Prioritaet eingehalten wird. ------- */
+        { static volatile uint16_t s_u16LastR_peer4 = 0u; prv_vWaitForPhase(4u, &s_u16LastR_peer4); }
         (void)OS_Mutex_LockBlocking(&s_testMutex);
         if (s_u8LockOrderIdx < 4u)
         {
-            s_au8LockOrder[s_u8LockOrderIdx++] = 2u;   /* Peer got it */
+            s_au8LockOrder[s_u8LockOrderIdx++] = 2u;   /* Peer war dran */
         }
         OS_Mutex_Unlock(&s_testMutex);
         s_u8PeerDone = 1u;
 
-        /* --- Phase 6: blocking take on the (empty) semaphore ---------- */
-        prv_vWaitForPhase(6u);
+        /* --- Phase 6: Semaphore blockierend nehmen (ist leer) --------- */
+        { static volatile uint16_t s_u16LastR_peer6 = 0u; prv_vWaitForPhase(6u, &s_u16LastR_peer6); }
         s_ePeerResult = OS_Semaphore_TakeBlocking(&s_testSem);
         s_u8PeerDone  = 1u;
 
-        /* --- Phase 9: receiver side of the data integrity test -------- */
-        prv_vWaitForPhase(9u);
+        /* --- Phase 11: Empfaenger, der eine volle Queue leert ---------
+         * REIHENFOLGE BEACHTEN: TestMainTask setzt Phase 11 (T16) VOR
+         * Phase 9 (T17). Dieser Block muss deshalb ebenfalls vor dem
+         * Phase-9-Block stehen - sonst wartet Peer auf 9, waehrend Main
+         * schon 11 gesetzt hat und in OS_Queue_SendBlocking() blockiert:
+         * klassischer Deadlock, keiner der beiden kommt weiter. */
+        { static volatile uint16_t s_u16LastR_peer11 = 0u; prv_vWaitForPhase(11u, &s_u16LastR_peer11); }
+        {
+            uint32_t u32Dummy;
+            /* Etwas warten, damit Main sicher im blockierenden Send steht */
+            Scheduler_vNonBlockedDelay(10u);
+            (void)OS_Queue_ReceiveNonBlocking(&s_testQueue, &u32Dummy);
+            s_u8PeerDone = 1u;
+        }
+
+        /* --- Phase 9: Empfaenger im Datenintegritaetstest ------------- */
+        { static volatile uint16_t s_u16LastR_peer9 = 0u; prv_vWaitForPhase(9u, &s_u16LastR_peer9); }
         {
             uint8_t  u8Ok = 1u;
             uint32_t u32Expected;
@@ -200,16 +217,16 @@ void TestPeerTask(void)
 
             for (u32Expected = 0u; u32Expected < TEST_MSG_COUNT; u32Expected++)
             {
-                /* Blocking: the queue is smaller than the message count,
-                 * so it runs empty in between -> exactly the case under
-                 * test. */
+                /* Blockierend: die Queue ist kleiner als die Nachrichten-
+                 * zahl, also laeuft sie zwischendurch leer -> genau der
+                 * zu pruefende Fall. */
                 if (OS_Queue_ReceiveBlocking(&s_testQueue, &u32Got) != OS_OK)
                 {
                     u8Ok = 0u;
                     break;
                 }
-                /* Checks FIFO order AND payload integrity at once: the
-                 * messages carry a known pattern. */
+                /* FIFO-Reihenfolge UND unveraenderter Inhalt in einem:
+                 * die Nachrichten tragen ein bekanntes Muster. */
                 if (u32Got != (0xA5A50000u | u32Expected))
                 {
                     u8Ok = 0u;
@@ -220,87 +237,87 @@ void TestPeerTask(void)
             s_u8PeerDone  = 1u;
         }
 
-        /* --- Phase 11: receiver that drains one slot of a full queue -- */
-        prv_vWaitForPhase(11u);
-        {
-            uint32_t u32Dummy;
-            /* Wait a little so Main is definitely inside the blocking send */
-            Scheduler_vNonBlockedDelay(10u);
-            (void)OS_Queue_ReceiveNonBlocking(&s_testQueue, &u32Dummy);
-            s_u8PeerDone = 1u;
-        }
-
-        /* Afterwards just keep the task alive without doing anything */
-        for (;;)
-        {
-            Scheduler_vNonBlockedDelay(50u);
-        }
+        /* Runde beendet - zurueck zum ersten Wartepunkt der for(;;)-
+         * Schleife, damit der naechste Testdurchlauf von TestMainTask
+         * wieder bedient wird. KEINE eigene Endlosschleife hier: die
+         * wuerde den Task dauerhaft blockieren und die Wiederholung
+         * der Tests verhindern. */
     }
 }
 
 /* ==========================================================================
- * TestHighTask - high-priority contender (slot 0, prio 3)
+ * TestHighTask - hochpriorer Konkurrent (Slot 0, Prio 3)
  * ========================================================================== */
 
-/**
- * @brief High-priority partner task used in the priority-ordering scenarios.
- * @author Berkay
- */
 void TestHighTask(void)
 {
     for (;;)
     {
-        /* --- Phase 4: blocking acquire like Peer, but at priority 3.
-         * Both wait on the same mutex; after the release the
-         * high-priority task must get it FIRST. ---------------------- */
-        prv_vWaitForPhase(4u);
-        /* Wait briefly so Peer issues its acquire first - this guarantees
-         * that both are really waiting at the same time and that the
-         * priority, not the arrival order, decides the outcome. */
+        /* --- Phase 4: blockierendes Acquire wie Peer, aber Prio 3.
+         * Beide warten auf denselben Mutex; nach der Freigabe muss der
+         * hochpriore Task ZUERST drankommen. -------------------------- */
+        { static volatile uint16_t s_u16LastR_high4 = 0u; prv_vWaitForPhase(4u, &s_u16LastR_high4); }
+        /* Kurz warten, damit Peer sein Acquire zuerst absetzt - so ist
+         * sichergestellt, dass wirklich beide gleichzeitig warten und
+         * die Prioritaet (nicht die Ankunftsreihenfolge) entscheidet. */
         Scheduler_vNonBlockedDelay(2u);
         (void)OS_Mutex_LockBlocking(&s_testMutex);
         if (s_u8LockOrderIdx < 4u)
         {
-            s_au8LockOrder[s_u8LockOrderIdx++] = 1u;   /* High got it */
+            s_au8LockOrder[s_u8LockOrderIdx++] = 1u;   /* High war dran */
         }
         OS_Mutex_Unlock(&s_testMutex);
         s_u8HighDone = 1u;
 
-        /* --- Phase 7: give the semaphore that Peer is waiting on ------ */
-        prv_vWaitForPhase(7u);
+        /* --- Phase 7: Semaphore freigeben, auf die Peer wartet -------- */
+        { static volatile uint16_t s_u16LastR_high7 = 0u; prv_vWaitForPhase(7u, &s_u16LastR_high7); }
         OS_Semaphore_Give(&s_testSem);
         s_u8HighDone = 1u;
 
-        for (;;)
-        {
-            Scheduler_vNonBlockedDelay(50u);
-        }
+        /* Runde beendet - zurueck zum ersten Wartepunkt (Phase 4) der
+         * for(;;)-Schleife, damit der naechste Testdurchlauf bedient
+         * wird. KEINE eigene Endlosschleife hier - die wuerde die
+         * Wiederholung der Tests verhindern. */
     }
 }
 
 /* ==========================================================================
- * TestMainTask - sequencing and evaluation (slot 1, prio 1)
+ * TestMainTask - Ablauf und Auswertung (Slot 1, Prio 1)
  * ========================================================================== */
 
-/**
- * @brief Main test task: drives the phases, evaluates the results and prints
- *        them over UART.
- * @author Berkay
- *
- * Runs the test cases T1..T18 in order, then prints a summary and goes idle so
- * the trace can be closed cleanly in SystemView.
- */
 void TestMainTask(void)
 {
-    /* Short run-up so the UART and the other tasks are ready */
+    /* Etwas Anlauf, damit UART und die anderen Tasks bereit sind */
     Scheduler_vNonBlockedDelay(200u);
+
+    /* --------------------------------------------------------------------
+     * DAUERSCHLEIFE: Der komplette Testdurchlauf wiederholt sich endlos.
+     * Damit muss beim Aufzeichnen nicht mehr das schmale Zeitfenster
+     * direkt nach dem Boot getroffen werden - SystemView kann jederzeit
+     * verbunden werden und faengt garantiert einen vollstaendigen
+     * Durchlauf mit allen Blocking-/Timeout-/Konkurrenz-Ereignissen ein.
+     * TestPeerTask und TestHighTask laufen ohnehin schon in eigenen
+     * for(;;)-Schleifen und kehren von selbst zu ihren Wartepunkten
+     * zurueck.
+     * -------------------------------------------------------------------- */
+    for (;;)
+    {
+    /* Neue Runde beginnt: Zaehler erhoehen, DAMIT sind alle Phasenwerte
+     * dieser Runde von der vorherigen unterscheidbar (siehe
+     * prv_vWaitForPhase). Muss vor der ersten Phasenumschaltung
+     * passieren. */
+    s_u16Round++;
+
+    /* Zaehler fuer diesen Durchlauf zuruecksetzen */
+    s_u16TestsRun    = 0u;
+    s_u16TestsPassed = 0u;
 
     OS_Mutex_LockBlocking(&s_testUartMutex);
     UART_SendString("\r\n=== RTOS-Integrationstests ===\r\n");
     OS_Mutex_Unlock(&s_testUartMutex);
 
     /* ---------------------------------------------------------------- *
-     * T1: Mutex - simple lock/unlock by a single task
+     * T1: Mutex - einfaches Lock/Unlock
      * ---------------------------------------------------------------- */
     {
         OS_Result_t e1 = OS_Mutex_LockNonBlocking(&s_testMutex);
@@ -310,83 +327,91 @@ void TestMainTask(void)
     }
 
     /* ---------------------------------------------------------------- *
-     * T2: Mutex - a competing non-blocking lock must fail
+     * T2: Mutex - konkurrierender NonBlocking-Zugriff schlaegt fehl
      * ---------------------------------------------------------------- */
-    (void)OS_Mutex_LockBlocking(&s_testMutex);   /* Main holds it */
+    (void)OS_Mutex_LockBlocking(&s_testMutex);   /* Main haelt ihn */
     s_u8PeerDone = 0u;
     s_u8Phase    = 2u;
-    (void)prv_u8WaitFlag(&s_u8PeerDone, 100u);
-    prv_vReport("T2  Mutex: NonBlocking bei belegtem Mutex -> WOULD_BLOCK",
-                (s_ePeerResult == OS_WOULD_BLOCK) ? 1u : 0u);
+    {
+        /* Rueckgabewert AUSWERTEN: nur wenn der Peer sein Fertig-Flag in
+         * DIESER Runde gesetzt hat, ist s_ePeerResult frisch. Ohne diese
+         * Pruefung wuerde ein haengender Peer in Runde 2+ den Wert der
+         * VORrunde auswerten -> faelschlich [OK]. */
+        uint8_t u8Done = prv_u8WaitFlag(&s_u8PeerDone, 100u);
+        prv_vReport("T2  Mutex: NonBlocking bei belegtem Mutex -> WOULD_BLOCK",
+                    (u8Done && (s_ePeerResult == OS_WOULD_BLOCK)) ? 1u : 0u);
+    }
 
     /* ---------------------------------------------------------------- *
-     * T3: Mutex - the timeout expires because Main never releases
+     * T3: Mutex - Timeout laeuft ab, weil Main nicht freigibt
      * ---------------------------------------------------------------- */
     s_u8PeerDone = 0u;
     s_u8Phase    = 3u;
-    (void)prv_u8WaitFlag(&s_u8PeerDone, 200u);
-    prv_vReport("T3  Mutex: LockTimeout bei belegtem Mutex -> TIMEOUT",
-                (s_ePeerResult == OS_TIMEOUT) ? 1u : 0u);
+    {
+        uint8_t u8Done = prv_u8WaitFlag(&s_u8PeerDone, 200u);
+        prv_vReport("T3  Mutex: LockTimeout bei belegtem Mutex -> TIMEOUT",
+                    (u8Done && (s_ePeerResult == OS_TIMEOUT)) ? 1u : 0u);
+    }
 
     /* ---------------------------------------------------------------- *
-     * T4: Mutex - two blocking waiters, the priority decides the order.
-     *     Main still holds the mutex from T2/T3 and only releases it once
-     *     both waiters are definitely blocked.
+     * T4: Mutex - zwei blockierende Wartende, Prioritaet entscheidet
+     *     Main haelt den Mutex noch aus T2/T3 und gibt ihn erst frei,
+     *     wenn beide sicher blockiert warten.
      * ---------------------------------------------------------------- */
     s_u8PeerDone     = 0u;
     s_u8HighDone     = 0u;
     s_u8LockOrderIdx = 0u;
     s_u8Phase        = 4u;
 
-    Scheduler_vNonBlockedDelay(20u);   /* both are BLOCKED by now */
-    OS_Mutex_Unlock(&s_testMutex);     /* start the race */
+    Scheduler_vNonBlockedDelay(30u);   /* beide sind jetzt BLOCKED */
+    OS_Mutex_Unlock(&s_testMutex);     /* Rennen freigeben */
 
-    (void)prv_u8WaitFlag(&s_u8HighDone, 200u);
-    (void)prv_u8WaitFlag(&s_u8PeerDone, 200u);
-    prv_vReport("T4  Mutex: blockierendes Acquire weckt Wartende",
-                (s_u8LockOrderIdx >= 2u) ? 1u : 0u);
+    {
+        uint8_t u8H = prv_u8WaitFlag(&s_u8HighDone, 200u);
+        uint8_t u8P = prv_u8WaitFlag(&s_u8PeerDone, 200u);
+        prv_vReport("T4  Mutex: blockierendes Acquire weckt Wartende",
+                    (u8H && u8P && (s_u8LockOrderIdx >= 2u)) ? 1u : 0u);
+    }
     prv_vReport("T5  Mutex: hochpriorer Wartender kommt zuerst",
                 ((s_u8LockOrderIdx >= 2u) && (s_au8LockOrder[0] == 1u)) ? 1u : 0u);
 
     /* ---------------------------------------------------------------- *
-     * T6: Semaphore - a non-blocking take on an empty semaphore must fail
+     * T6: Semaphore - leere Semaphore, NonBlocking schlaegt fehl
      * ---------------------------------------------------------------- */
     prv_vReport("T6  Semaphore: Take auf leerer Semaphore -> WOULD_BLOCK",
                 (OS_Semaphore_TakeNonBlocking(&s_testSem) == OS_WOULD_BLOCK) ? 1u : 0u);
 
     /* ---------------------------------------------------------------- *
-     * T7: Semaphore - the timeout expires on an empty semaphore
+     * T7: Semaphore - Timeout auf leerer Semaphore
      * ---------------------------------------------------------------- */
     {
-        uint32_t u32Before = 0u;
         OS_Result_t e = OS_Semaphore_TakeTimeout(&s_testSem, 20u);
-        (void)u32Before;
         prv_vReport("T7  Semaphore: TakeTimeout laeuft ab -> TIMEOUT",
                     (e == OS_TIMEOUT) ? 1u : 0u);
     }
 
     /* ---------------------------------------------------------------- *
-     * T8: Semaphore - a blocking take is woken by a give.
-     *     Peer blocks (phase 6), High gives (phase 7).
+     * T8: Semaphore - blockierendes Take wird durch Give geweckt
+     *     Peer blockiert (Phase 6), High gibt frei (Phase 7).
      * ---------------------------------------------------------------- */
     s_u8PeerDone = 0u;
     s_u8Phase    = 6u;
-    Scheduler_vNonBlockedDelay(20u);   /* Peer is BLOCKED by now */
+    Scheduler_vNonBlockedDelay(20u);   /* Peer ist jetzt BLOCKED */
 
     s_u8HighDone = 0u;
     s_u8Phase    = 7u;
-    (void)prv_u8WaitFlag(&s_u8HighDone, 100u);
     {
-        uint8_t u8Woke = prv_u8WaitFlag(&s_u8PeerDone, 200u);
+        uint8_t u8Given = prv_u8WaitFlag(&s_u8HighDone, 100u);
+        uint8_t u8Woke  = prv_u8WaitFlag(&s_u8PeerDone, 200u);
         prv_vReport("T8  Semaphore: Give weckt blockierten Task",
-                    (u8Woke && (s_ePeerResult == OS_OK)) ? 1u : 0u);
+                    (u8Given && u8Woke && (s_ePeerResult == OS_OK)) ? 1u : 0u);
     }
 
     /* ---------------------------------------------------------------- *
-     * T9: Semaphore - a double give must not raise the count above 1
+     * T9: Semaphore - Doppel-Give haelt den Wert bei 1 (binaer!)
      * ---------------------------------------------------------------- */
     OS_Semaphore_Give(&s_testSem);
-    OS_Semaphore_Give(&s_testSem);   /* the second give must be ignored */
+    OS_Semaphore_Give(&s_testSem);   /* zweites Give muss ignoriert werden */
     {
         OS_Result_t e1 = OS_Semaphore_TakeNonBlocking(&s_testSem);
         OS_Result_t e2 = OS_Semaphore_TakeNonBlocking(&s_testSem);
@@ -395,7 +420,7 @@ void TestMainTask(void)
     }
 
     /* ---------------------------------------------------------------- *
-     * T10: Queue - a non-blocking receive on an empty queue must fail
+     * T10: Queue - leer, NonBlocking-Receive schlaegt fehl
      * ---------------------------------------------------------------- */
     {
         uint32_t u32Dummy;
@@ -407,7 +432,7 @@ void TestMainTask(void)
     }
 
     /* ---------------------------------------------------------------- *
-     * T12: Queue - fill it up, then a non-blocking send must fail
+     * T12: Queue - voll laufen lassen, NonBlocking-Send schlaegt fehl
      * ---------------------------------------------------------------- */
     {
         uint32_t i;
@@ -431,7 +456,7 @@ void TestMainTask(void)
                             == OS_WOULD_BLOCK) ? 1u : 0u);
         }
 
-        /* Timeout variant on the full queue */
+        /* Timeout-Variante an voller Queue */
         {
             uint32_t u32Val = 0xDEADBEEFu;
             prv_vReport("T15 Queue: SendTimeout an voller Queue -> TIMEOUT",
@@ -441,8 +466,8 @@ void TestMainTask(void)
     }
 
     /* ---------------------------------------------------------------- *
-     * T16: Queue - a blocking send on a full queue is woken by a receiver
-     *      (Peer drains one entry in phase 11).
+     * T16: Queue - blockierender Send an voller Queue wird durch einen
+     *      Empfaenger geweckt (Peer leert in Phase 11 einen Eintrag).
      * ---------------------------------------------------------------- */
     s_u8PeerDone = 0u;
     s_u8Phase    = 11u;
@@ -453,21 +478,21 @@ void TestMainTask(void)
                     (e == OS_OK) ? 1u : 0u);
     }
 
-    /* Drain the queue for the next test */
+    /* Queue fuer den naechsten Test leeren */
     {
         uint32_t u32Dummy;
         while (OS_Queue_ReceiveNonBlocking(&s_testQueue, &u32Dummy) == OS_OK)
         {
-            /* drain */
+            /* leeren */
         }
     }
 
     /* ---------------------------------------------------------------- *
-     * T17: Queue - task communication and data integrity.
-     *      Main sends TEST_MSG_COUNT messages carrying a known pattern,
-     *      Peer receives them and checks order and content. Since the
-     *      queue is smaller than the message count, both sides block in
-     *      between - exactly the case under test.
+     * T17: Queue - Task-Kommunikation und Datenintegritaet
+     *      Main sendet TEST_MSG_COUNT Nachrichten mit bekanntem Muster,
+     *      Peer empfaengt und prueft Reihenfolge und Inhalt. Da die
+     *      Queue kleiner ist als die Nachrichtenzahl, blockieren beide
+     *      Seiten zwischendurch - genau der zu pruefende Fall.
      * ---------------------------------------------------------------- */
     s_u8PeerDone = 0u;
     s_u8Phase    = 9u;
@@ -494,7 +519,7 @@ void TestMainTask(void)
     }
 
     /* ---------------------------------------------------------------- *
-     * Summary
+     * Zusammenfassung
      * ---------------------------------------------------------------- */
     OS_Mutex_LockBlocking(&s_testUartMutex);
     UART_SendString("--- Ergebnis: ");
@@ -512,10 +537,10 @@ void TestMainTask(void)
     }
     OS_Mutex_Unlock(&s_testUartMutex);
 
-    /* Test run finished - the task stays asleep so the trace winds down
-     * quietly and can be closed cleanly in SystemView. */
-    for (;;)
-    {
-        Scheduler_vNonBlockedDelay(100u);
-    }
+    /* Pause zwischen zwei Durchlaeufen: gibt TestPeerTask und
+     * TestHighTask genug Zeit, ihre letzten Phasenbloecke abzuschliessen
+     * und sauber zu ihren jeweils ersten Wartepunkten zurueckzukehren,
+     * bevor die naechste Runde die Phasen neu setzt. */
+    Scheduler_vNonBlockedDelay(500u);
+    }   /* Ende der Dauerschleife - naechster Durchlauf */
 }
