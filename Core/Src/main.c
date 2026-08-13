@@ -2,7 +2,8 @@
 /**
  ******************************************************************************
  * @file           : main.c
- * @brief          : Main program body - DOS-RTOS Endprojekt (STM32L475VG)
+ * @brief          : Main program body - DOS-RTOS final project (STM32L475VG)
+ * @author         : Shared Work
  ******************************************************************************
  * @attention
  *
@@ -12,6 +13,23 @@
  * This software is licensed under terms that can be found in the LICENSE file
  * in the root directory of this software component.
  * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ *
+ * @note This file is based on the STM32CubeMX-generated skeleton. Everything
+ *       inside the USER CODE sections, as well as the clock, GPIO and USART
+ *       configuration below, was written by us; the surrounding structure and
+ *       the HAL calls come from the code generator.
+ *
+ * Start-up order in main(), which matters:
+ *   1. HAL + clock          - SysTick starts running here already
+ *   2. Tracing              - before any RTOS code, so nothing is missed
+ *   3. Debug/sleep unlock   - so SWD survives the idle task's __WFI()
+ *   4. Peripherals          - GPIO, USART
+ *   5. RTOS objects + tasks - queues/mutexes/semaphores, then the stacks
+ *   6. Drivers              - UART RX interrupt, HC-SR04
+ *   7. Interrupt priorities - SysTick highest, PendSV lowest
+ *   8. Scheduler_vInit()    - from here on the SysTick actually schedules
  *
  ******************************************************************************
  */
@@ -36,7 +54,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-UART_HandleTypeDef huart1; /* von board_config.h als APP_UART_HANDLE erwartet */
+UART_HandleTypeDef huart1; /* expected by board_config.h as APP_UART_HANDLE */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -48,38 +66,38 @@ static void MX_USART1_UART_Init(void);
 
 /**
  * @brief  The application entry point.
- * @retval int
+ * @retval int (never returns - main becomes the idle task, see below)
+ * @author Shared Work
  */
 int main(void) {
-	/* Ab HAL_Init() laeuft der SysTick (1ms). Der Scheduler ignoriert Ticks
-	 * bis Scheduler_vInit() (Boot-Guard in scheduler.c). */
+	/* From HAL_Init() onwards the SysTick runs (1 ms). The scheduler ignores
+	 * those ticks until Scheduler_vInit() (boot guard in scheduler.c). */
 	HAL_Init();
 	SystemClock_Config();
 
-	SEGGER_SYSVIEW_Conf(); /* SystemView-RTT einrichten                */
-	OS_Trace_Init(); /* eigenes Event-Modul + Task-Infos melden  */
+	SEGGER_SYSVIEW_Conf(); /* set up SystemView over RTT              */
+	OS_Trace_Init(); /* register our event module + task info    */
 
-	/* STM32L4-Spezifikum: der Idle-Task ruft __WFI() auf (Sleep bis zum
-	 * naechsten Interrupt). Ohne die folgenden DBGMCU-Freigaben verliert
-	 * der Debugger/SWD (und damit SEGGER RTT/SystemView!) den Zugriff auf
-	 * den Kern, sobald dieser im Sleep-Modus haengt - das aeussert sich
-	 * als "Could not find RTT Control Block" mit Timeout, und das
-	 * Programm bleibt beim fehlgeschlagenen Debug-Halt haengen. */
+	/* STM32L4 specific: the idle task calls __WFI() (sleep until the next
+	 * interrupt). Without the DBGMCU enables below, the debugger/SWD - and
+	 * therefore SEGGER RTT/SystemView - loses access to the core as soon as
+	 * it enters sleep mode. The symptom is a "Could not find RTT Control
+	 * Block" timeout, with the program stuck on the failed debug halt. */
 	HAL_DBGMCU_EnableDBGSleepMode();
 	HAL_DBGMCU_EnableDBGStopMode();
 	HAL_DBGMCU_EnableDBGStandbyMode();
 
-	MX_GPIO_Init(); /* PB4 = TRIG (Out), PB5 = ECHO (EXTI)      */
+	MX_GPIO_Init(); /* TRIG as output, ECHO as EXTI input       */
 
 	/* USER CODE BEGIN 2 */
 	MX_USART1_UART_Init(); /* PB6/PB7 -> ST-LINK VCP, 115200 8N1       */
 
-	/* --- Tracing (vor allem anderen RTOS-Code!) --------------------------- */
-//  HAL_Delay(500);// ~ein paar ms warten, RTT-Transfer abschliessen lassen
-	/* --- RTOS-Objekte und Tasks ------------------------------------------- */
+	/* --- Tracing (must come before any other RTOS code!) ----------------- */
+//  HAL_Delay(500);// wait a few ms, let the RTT transfer finish
+	/* --- RTOS objects and tasks ------------------------------------------- */
 #if (OS_RUN_INTEGRATION_TESTS != 0)
-	/* Testmodus: Mutex-/Semaphore-/Queue-Integrationstests statt der
-	 * Distanzmessung. Umschalten in os_trace_config.h. */
+	/* Test mode: mutex/semaphore/queue integration tests instead of the
+	 * distance measurement. Switch this in os_trace_config.h. */
 	Tests_vInitResources();
 	Tasks_vInitTaskArray();
 	Stack_vInit(&tasks[0], TestHighTask);
@@ -87,55 +105,55 @@ int main(void) {
 	Stack_vInit(&tasks[2], TestPeerTask);
 	Stack_vInit(&tasks[3], IdleTask);
 #else
-  App_Resources_Init();         /* Queues, Mutexe, Semaphoren, g_userConfig */
-  Tasks_vInitTaskArray();       /* Id/Prio/State der 4 Tasks                */
+  App_Resources_Init();         /* queues, mutexes, semaphores, g_userConfig*/
+  Tasks_vInitTaskArray();       /* id/prio/state of the 4 tasks             */
   Stack_vInit(&tasks[0], SensorTask);
   Stack_vInit(&tasks[1], ProcTask);
   Stack_vInit(&tasks[2], UartShellTask);
-  Stack_vInit(&tasks[3], IdleTask);   /* Stack wird nie genutzt, s.u.       */
+  Stack_vInit(&tasks[3], IdleTask);   /* stack is never used, see below     */
 #endif
 
-	/* --- Treiber ----------------------------------------------------------- */
-	UART_Init(); /* RX-Interrupt scharf (nach MX_USART1!)    */
+	/* --- Drivers ----------------------------------------------------------- */
+	UART_Init(); /* arm the RX interrupt (after MX_USART1!)  */
 #if (OS_RUN_INTEGRATION_TESTS == 0)
-  HCSR04_vInit();               /* DWT-Zykluszaehler fuer die Pulsmessung   */
+  HCSR04_vInit();               /* DWT cycle counter for the pulse timing   */
 #endif
 
-	/* --- Interrupt-Prioritaeten (Zahl groesser = niedriger) ---------------
-	 *  SysTick 0  : trifft die Scheduling-Entscheidung, nistet in allen ISRs
-	 *  EXTI0   5  : Echo-Flanken (in MX_GPIO_Init gesetzt)
-	 *  USART1  6  : Shell-Eingabe (in HAL_UART_MspInit gesetzt)
-	 *  PendSV  15 : Kontextwechsel IMMER als letztes, nach allen ISRs        */
+	/* --- Interrupt priorities (higher number = lower priority) -----------
+	 *  SysTick 0  : makes the scheduling decision, nests inside all ISRs
+	 *  EXTI0   5  : echo edges (set in MX_GPIO_Init)
+	 *  USART1  6  : shell input (set in HAL_UART_MspInit)
+	 *  PendSV  15 : context switch ALWAYS last, after every other ISR       */
 	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 	HAL_NVIC_SetPriority(PendSV_IRQn, 15, 0);
 
-	/* --- Scheduler starten ------------------------------------------------- */
+	/* --- Start the scheduler ----------------------------------------------- */
 	Scheduler_vInit();
 
-	/* Beim ersten Kontextwechsel sichert PendSV DIESEN Kontext (main) in
-	 * den TCB von tasks[3] - main IST danach der Idle-Task. Deshalb geht
-	 * es hier direkt in die Idle-Schleife (WFI + SystemView-OnIdle): */
+	/* On the first context switch, PendSV saves THIS context (main) into the
+	 * TCB of tasks[3] - from then on main IS the idle task. That is why we
+	 * drop straight into the idle loop here (which is also why the stack
+	 * prepared for tasks[3] above is never actually used): */
 	IdleTask();
 	/* USER CODE END 2 */
 
 	while (1) {
-		/* nie erreicht - IdleTask() kehrt nicht zurueck */
+		/* never reached - IdleTask() does not return */
 	}
 }
 
 /**
- * @brief System Clock Configuration
+ * @brief System clock configuration: MSI 4 MHz -> PLL -> 80 MHz.
+ * @author Shared Work
  *
- * 80 MHz aus dem internen MSI (4 MHz) * PLL (N=40, R=2). Das L475-Board
- * hat keinen HSE-Quarz am MCU-Haupttakt. AHB/APB1/APB2 = 80 MHz.
- * Der HC-SR04-Treiber rechnet ueber SystemCoreClock - passt automatisch.
- */
-/**
- * @brief Systemtakt konfigurieren: MSI 4 MHz -> PLL -> 80 MHz.
+ * 80 MHz derived from the internal MSI (4 MHz) through the PLL (N=40, R=2).
+ * The L475 board has no HSE crystal on the MCU main clock, hence MSI as the
+ * PLL source. AHB/APB1/APB2 all run at 80 MHz.
  *
- * Das L475-Board hat keinen HSE-Quarz am Haupttakt, daher MSI als
- * PLL-Quelle. Voltage Scale 1 und Flash-Latency 4 sind fuer 80 MHz
- * zwingend.
+ * Voltage scale 1 and flash latency 4 are mandatory for 80 MHz.
+ *
+ * @note The HC-SR04 driver derives its timing from SystemCoreClock, so it
+ *       adapts to this setting automatically.
  */
 void SystemClock_Config(void) {
 	RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
@@ -181,14 +199,12 @@ void SystemClock_Config(void) {
 }
 
 /**
- * @brief GPIO Initialization Function
- */
-/**
- * @brief GPIO-Initialisierung inkl. HC-SR04-Pins.
+ * @brief GPIO initialisation, including the HC-SR04 pins.
+ * @author Shared Work
  *
- * Die HC-SR04-Pins (TRIG als Ausgang, ECHO als EXTI mit beiden Flanken)
- * werden im USER-CODE-Block gesetzt, damit sie eine .ioc-Neugenerierung
- * ueberleben.
+ * The HC-SR04 pins (TRIG as output, ECHO as EXTI on both edges) are
+ * configured inside the USER CODE block so they survive a regeneration from
+ * the .ioc file.
  */
 static void MX_GPIO_Init(void) {
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
@@ -201,7 +217,7 @@ static void MX_GPIO_Init(void) {
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 
 	/* USER CODE BEGIN MX_GPIO_Init_2 */
-	/* --- HC-SR04: PB4 = TRIG (Ausgang, initial Low) ----------------------- */
+	/* --- HC-SR04: TRIG (output, initially low) ---------------------------- */
 	HAL_GPIO_WritePin(HCSR04_TRIG_PORT, HCSR04_TRIG_PIN, GPIO_PIN_RESET);
 
 	GPIO_InitStruct.Pin = HCSR04_TRIG_PIN;
@@ -210,7 +226,7 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(HCSR04_TRIG_PORT, &GPIO_InitStruct);
 
-	/* --- HC-SR04: PB5 = ECHO (EXTI, BEIDE Flanken, Pull-Down) ------------- */
+	/* --- HC-SR04: ECHO (EXTI, BOTH edges, pull-down) ---------------------- */
 	GPIO_InitStruct.Pin = HCSR04_ECHO_PIN;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
 	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
@@ -223,18 +239,16 @@ static void MX_GPIO_Init(void) {
 
 /* USER CODE BEGIN 4 */
 /**
- * @brief USART1 Initialization Function (115200 8N1 auf PB6/PB7 = ST-LINK VCP)
+ * @brief Initialise USART1 for the shell (115200 8N1 on PB6/PB7).
+ * @author Shared Work
  *
- * HINWEIS: Sobald ihr USART1 im .ioc aktiviert und neu generiert,
- * erzeugt CubeMX MX_USART1_UART_Init in der main.c und
- * HAL_UART_MspInit in stm32l4xx_hal_msp.c selbst - dann DIESE beiden
- * Funktionen hier loeschen (sonst doppelte Symbole).
- */
-/**
- * @brief USART1 fuer die Shell initialisieren (115200 8N1, PB6/PB7).
+ * PB6/PB7 are hard-wired to the ST-LINK virtual COM port on the
+ * B-L475E-IOT01A, so no external adapter is needed.
  *
- * PB6/PB7 sind auf dem B-L475E-IOT01A fest mit dem ST-LINK Virtual COM
- * Port verbunden.
+ * @warning As soon as USART1 is enabled in the .ioc and the project is
+ *          regenerated, CubeMX emits MX_USART1_UART_Init() in main.c and
+ *          HAL_UART_MspInit() in stm32l4xx_hal_msp.c itself - THESE two
+ *          functions must then be deleted here to avoid duplicate symbols.
  */
 static void MX_USART1_UART_Init(void) {
 	huart1.Instance = USART1;
@@ -252,12 +266,19 @@ static void MX_USART1_UART_Init(void) {
 	}
 }
 
-/* Wird von HAL_UART_Init() aufgerufen. */
+/**
+ * @brief Low-level UART setup: clocks, pins and NVIC.
+ * @param huart UART handle being initialised.
+ * @author Shared Work
+ *
+ * Called by HAL_UART_Init(). See the warning on MX_USART1_UART_Init() about
+ * regenerating from the .ioc file.
+ */
 void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
 	RCC_PeriphCLKInitTypeDef PeriphClkInit = { 0 };
 	if (huart->Instance == USART1) {
-		/* USART1-Kernel-Takt: PCLK2 (80 MHz) */
+		/* USART1 kernel clock: PCLK2 (80 MHz) */
 		PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
 		PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
 		if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
@@ -267,7 +288,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
 		__HAL_RCC_USART1_CLK_ENABLE();
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 
-		GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7; /* PB6 TX, PB7 RX */
+		GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7; /* PB6 = TX, PB7 = RX */
 		GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 		GPIO_InitStruct.Pull = GPIO_NOPULL;
 		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -281,10 +302,12 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
 /* USER CODE END 4 */
 
 /**
- * @brief  This function is executed in case of error occurrence.
- */
-/**
- * @brief Fehlerbehandlung: Interrupts sperren und anhalten.
+ * @brief  Error handler: disable interrupts and halt.
+ * @author Shared Work
+ *
+ * Executed whenever a HAL initialisation call fails. Deliberately a hard stop
+ * rather than a retry - a failed clock or peripheral setup leaves the system
+ * in a state where continuing would produce misleading measurements.
  */
 void Error_Handler(void) {
 	/* USER CODE BEGIN Error_Handler_Debug */
@@ -294,6 +317,13 @@ void Error_Handler(void) {
 	/* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
+/**
+ * @brief Reports the name of the source file and the line number where an
+ *        assert_param error has occurred.
+ * @param file Pointer to the source file name.
+ * @param line assert_param error line source number.
+ * @author Shared Work
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
