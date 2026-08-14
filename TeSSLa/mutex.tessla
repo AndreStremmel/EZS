@@ -1,0 +1,175 @@
+-- ===========================================================================
+-- mutex.tessla
+--  Mutex rules for g_uartMutex (uart) and g_configMutex (cfg).
+--
+--  java -jar tessla.jar interpreter tessla/mutex.tessla trace.input
+--  Passed = all violation_* streams stay empty.
+--
+--  See tessla/README.md for which trace to use, expected results, and
+--  the requirement-to-rule mapping.
+-- ===========================================================================
+
+in exec:    Events[Int]
+in ready:   Events[Int]
+in blocked: Events[Int]
+
+in mtx_uart_try:           Events[Int]
+in mtx_uart_ok:            Events[Int]
+in mtx_uart_block:         Events[Int]
+in mtx_uart_block_ticks_0: Events[Int]
+in mtx_uart_block_ticks_1: Events[Int]
+in mtx_uart_block_ticks_2: Events[Int]
+in mtx_uart_block_ticks_3: Events[Int]
+in mtx_uart_timeout:       Events[Int]
+in mtx_uart_unlock:        Events[Int]
+in mtx_uart_unlock_denied: Events[Int]
+
+in mtx_cfg_try:            Events[Int]
+in mtx_cfg_ok:             Events[Int]
+in mtx_cfg_block:          Events[Int]
+in mtx_cfg_block_ticks_0:  Events[Int]
+in mtx_cfg_block_ticks_1:  Events[Int]
+in mtx_cfg_block_ticks_2:  Events[Int]
+in mtx_cfg_block_ticks_3:  Events[Int]
+in mtx_cfg_timeout:        Events[Int]
+in mtx_cfg_unlock:         Events[Int]
+in mtx_cfg_unlock_denied:  Events[Int]
+
+-- 80us per tick, measured empirically from the trace (see README.md,
+-- "Tick length"). Not the 1ms that would be the default assumption for
+-- a SysTick-based scheduler.
+def TICK: Int   = 80000
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK:
+-- recording starts mid-flight, and the reconstructed state needs some
+-- real time to converge regardless of how long a tick is.
+def WARMUP: Int = 250000000
+def TOL: Int    = 2 * TICK       -- state transitions follow within
+                                  -- microseconds; 2 ticks is generous
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+def prioOf(t: Events[Int]): Events[Int] =
+  if t == 0 then 3 else if t == 3 then 0 else 1
+
+-- ---------------------------------------------------------------------------
+-- Owner reconstruction: task index of the current owner, or -1 (free)
+-- ---------------------------------------------------------------------------
+def owner(ok: Events[Int], unlock: Events[Int]): Events[Int] =
+  merge(ok, const(-1, unlock))
+
+-- RULE: a mutex has at most one owner / no re-acquiring a locked mutex
+--  A LockOk while the mutex already has an owner (immediately before)
+--  violates both: a different owner means two owners at once, the same
+--  owner means a double lock (our mutexes are NOT recursive).
+def doubleLock(ok: Events[Int], unlock: Events[Int]): Events[Bool] =
+  filter(const(true, ok), default(last(owner(ok, unlock), ok), -1) != -1)
+
+-- RULE: only the owner may release the mutex
+--  Checked on SUCCESSFUL releases only. (UnlockDenied events show that
+--  the implementation rejects foreign releases - reported as info below.)
+def unlockNotOwner(ok: Events[Int], unlock: Events[Int]): Events[Bool] =
+  filter(const(true, unlock),
+         default(last(owner(ok, unlock), unlock), -1) != unlock)
+
+-- ---------------------------------------------------------------------------
+-- Waiting-set reconstruction: task i waits from its Block event until it
+-- either gets the mutex (Ok) or gives up (Timeout).
+-- ---------------------------------------------------------------------------
+def waiting(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+            i: Int): Events[Bool] =
+  merge(merge(const(true,  filter(block, block == i)),
+              const(false, filter(ok, ok == i))),
+        const(false, filter(tmo, tmo == i)))
+
+-- RULE: a blocking acquire must move the task to BLOCKED
+--  Within TOL after a Block event for task i, a blocked(i) must follow.
+--  Encoded as an open obligation (timestamp or -1), checked against the
+--  dense exec heartbeat (the scheduler fires every tick).
+def blockObl(block: Events[Int], i: Int): Events[Int] =
+  merge(time(filter(block, block == i)),
+        const(-1, filter(blocked, blocked == i)))
+def blockLate(block: Events[Int], i: Int): Events[Bool] =
+     default(blockObl(block, i), -1) >= 0
+  && time(exec) - default(blockObl(block, i), -1) > TOL
+def mustBlock(block: Events[Int]): Events[Bool] =
+  merge(merge(blockLate(block, 0), blockLate(block, 1)),
+        merge(blockLate(block, 2), blockLate(block, 3)))
+
+-- RULE: releasing the mutex must wake a waiting task
+--  On Unlock while task i was (pre) waiting: ready(i) must follow within TOL.
+def wakeObl(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+            unlock: Events[Int], i: Int): Events[Int] =
+  merge(time(filter(unlock,
+                    default(last(waiting(block, ok, tmo, i), unlock), false))),
+        const(-1, filter(ready, ready == i)))
+def wakeLate(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+             unlock: Events[Int], i: Int): Events[Bool] =
+     default(wakeObl(block, ok, tmo, unlock, i), -1) >= 0
+  && time(exec) - default(wakeObl(block, ok, tmo, unlock, i), -1) > TOL
+def mustWake(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+             unlock: Events[Int]): Events[Bool] =
+  merge(merge(wakeLate(block, ok, tmo, unlock, 0),
+              wakeLate(block, ok, tmo, unlock, 1)),
+        merge(wakeLate(block, ok, tmo, unlock, 2),
+              wakeLate(block, ok, tmo, unlock, 3)))
+
+-- RULE: priority ordering among waiting tasks
+--  When task g gets the mutex (LockOk), no higher-priority task may have
+--  been waiting (immediately before) on the same mutex.
+def waitPrioBad(block: Events[Int], ok: Events[Int],
+                tmo: Events[Int]): Events[Bool] =
+     (default(last(waiting(block, ok, tmo, 0), ok), false) && 3 > prioOf(ok))
+  || (default(last(waiting(block, ok, tmo, 1), ok), false) && 1 > prioOf(ok))
+  || (default(last(waiting(block, ok, tmo, 2), ok), false) && 1 > prioOf(ok))
+
+-- ===========================================================================
+-- Instantiation: g_uartMutex
+-- ===========================================================================
+def violation_uart_double_lock =
+  guard(doubleLock(mtx_uart_ok, mtx_uart_unlock))
+out violation_uart_double_lock
+
+def violation_uart_unlock_not_owner =
+  guard(unlockNotOwner(mtx_uart_ok, mtx_uart_unlock))
+out violation_uart_unlock_not_owner
+
+def violation_uart_block_state = guard(mustBlock(mtx_uart_block))
+out violation_uart_block_state
+
+def violation_uart_wake_after_unlock =
+  guard(mustWake(mtx_uart_block, mtx_uart_ok, mtx_uart_timeout,
+                 mtx_uart_unlock))
+out violation_uart_wake_after_unlock
+
+def violation_uart_waiter_priority =
+  guard(waitPrioBad(mtx_uart_block, mtx_uart_ok, mtx_uart_timeout))
+out violation_uart_waiter_priority
+
+-- Info: releases REJECTED by the implementation (not an error - this is
+-- the proof that "only the owner releases" is actually enforced)
+def info_uart_unlock_denied = mtx_uart_unlock_denied
+out info_uart_unlock_denied
+
+-- ===========================================================================
+-- Instantiation: g_configMutex
+-- ===========================================================================
+def violation_cfg_double_lock =
+  guard(doubleLock(mtx_cfg_ok, mtx_cfg_unlock))
+out violation_cfg_double_lock
+
+def violation_cfg_unlock_not_owner =
+  guard(unlockNotOwner(mtx_cfg_ok, mtx_cfg_unlock))
+out violation_cfg_unlock_not_owner
+
+def violation_cfg_block_state = guard(mustBlock(mtx_cfg_block))
+out violation_cfg_block_state
+
+def violation_cfg_wake_after_unlock =
+  guard(mustWake(mtx_cfg_block, mtx_cfg_ok, mtx_cfg_timeout, mtx_cfg_unlock))
+out violation_cfg_wake_after_unlock
+
+def violation_cfg_waiter_priority =
+  guard(waitPrioBad(mtx_cfg_block, mtx_cfg_ok, mtx_cfg_timeout))
+out violation_cfg_waiter_priority
+
+def info_cfg_unlock_denied = mtx_cfg_unlock_denied
+out info_cfg_unlock_denied

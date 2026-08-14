@@ -1,0 +1,329 @@
+-- ===========================================================================
+-- queue_playground.tessla
+--  Playground/visualization variant of queue.tessla - NOT used for the
+--  formal verification run (that is queue.tessla). Identical rule logic;
+--  this file additionally exposes the raw event streams as `out` so the
+--  TeSSLa Playground (play.tessla.io) can plot them, and adds
+--  @VisEvents / @VisSignal annotations for a more readable graph.
+--
+--  Usage: paste this file into the Specification editor (top right) and
+--  a matching trace excerpt into the Trace editor (top left), then Run
+--  and switch to the "TeSSLa Visualization" tab. See tessla/README.md,
+--  section "Playground visualization" for the full walkthrough.
+--
+--  For the actual pass/fail verification, use queue.tessla instead:
+--  java -jar tessla.jar interpreter tessla/queue.tessla trace.input
+-- ===========================================================================
+
+in exec:    Events[Int]
+in ready:   Events[Int]
+in blocked: Events[Int]
+
+in q_sensor_send_try:         Events[Int]
+in q_sensor_send_ok:          Events[Int]
+in q_sensor_send_full:        Events[Int]
+in q_sensor_send_block:       Events[Int]
+in q_sensor_send_block_ticks_0: Events[Int]
+in q_sensor_send_block_ticks_1: Events[Int]
+in q_sensor_send_block_ticks_2: Events[Int]
+in q_sensor_send_block_ticks_3: Events[Int]
+in q_sensor_send_timeout:     Events[Int]
+in q_sensor_recv_try:         Events[Int]
+in q_sensor_recv_ok:          Events[Int]
+in q_sensor_recv_empty:       Events[Int]
+in q_sensor_recv_block:       Events[Int]
+in q_sensor_recv_block_ticks_0: Events[Int]
+in q_sensor_recv_block_ticks_1: Events[Int]
+in q_sensor_recv_block_ticks_2: Events[Int]
+in q_sensor_recv_block_ticks_3: Events[Int]
+in q_sensor_recv_timeout:     Events[Int]
+in q_sensor_count:            Events[Int]
+
+in q_proc_send_try:         Events[Int]
+in q_proc_send_ok:          Events[Int]
+in q_proc_send_full:        Events[Int]
+in q_proc_send_block:       Events[Int]
+in q_proc_send_block_ticks_0: Events[Int]
+in q_proc_send_block_ticks_1: Events[Int]
+in q_proc_send_block_ticks_2: Events[Int]
+in q_proc_send_block_ticks_3: Events[Int]
+in q_proc_send_timeout:     Events[Int]
+in q_proc_recv_try:         Events[Int]
+in q_proc_recv_ok:          Events[Int]
+in q_proc_recv_empty:       Events[Int]
+in q_proc_recv_block:       Events[Int]
+in q_proc_recv_block_ticks_0: Events[Int]
+in q_proc_recv_block_ticks_1: Events[Int]
+in q_proc_recv_block_ticks_2: Events[Int]
+in q_proc_recv_block_ticks_3: Events[Int]
+in q_proc_recv_timeout:     Events[Int]
+in q_proc_count:            Events[Int]
+
+def CAP: Int       = 8
+-- 80us per tick, measured empirically from the trace (see delay.tessla).
+def TICK: Int      = 80000
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK:
+-- recording starts mid-flight, and the reconstructed state needs some
+-- real time to converge regardless of how long a tick is.
+def WARMUP: Int = 250000000
+def TOL: Int       = 2 * TICK
+def TMO_SLACK: Int = 100 * TICK    -- see semaphore.tessla
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+
+-- RULE: 0 <= fill level <= capacity
+def rangeBad(count: Events[Int]): Events[Bool] =
+  filter(const(true, count), count < 0 || count > CAP)
+
+-- Fill-level consistency: SendOk increases it by exactly 1, RecvOk
+-- decreases it by exactly 1 (relative to the last reported level; the
+-- window's first count event is left unchecked - recording starts
+-- mid-run).
+def isSendCnt(sendOk: Events[Int], count: Events[Int]): Events[Bool] =
+  time(sendOk) == time(count)
+def deltaBad(sendOk: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, count),
+         (isSendCnt(sendOk, count) && count != last(count, count) + 1)
+      || (!isSendCnt(sendOk, count) && count != last(count, count) - 1))
+
+-- RULE: reading from an empty queue must not succeed
+--  Fill level immediately before RecvOk (= last reported level) == 0.
+def recvFromEmpty(recvOk: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, recvOk), last(count, recvOk) == 0)
+
+-- RULE: writing to a full queue must not succeed
+def sendToFull(sendOk: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, sendOk), last(count, sendOk) == CAP)
+
+-- RULES: FIFO order + messages arrive unmodified
+--  List of checksums of all sent, not-yet-received messages. Every
+--  RecvOk must carry the checksum at the head of that list: a mismatch
+--  violates EITHER order OR content (the checksum covers both rules at
+--  once). Messages that were already sitting in the queue before
+--  recording started are skipped (list still empty -> no verdict
+--  possible).
+--
+--  DISABLED: the list-based reconstruction (List.append/List.tail on
+--  every event) scales poorly in the TeSSLa interpreter and causes an
+--  OutOfMemoryError on longer recordings (~80+ queue operations), even
+--  with an enlarged Java heap (-Xmx8g). FIFO order and data integrity
+--  are instead demonstrated functionally via integration test T18
+--  (tests.c: 16 messages with a known checksum pattern through a queue
+--  smaller than the message count - both sides block in between).
+--
+-- def fifo(sendOk: Events[Int], recvOk: Events[Int]): Events[List[Int]] =
+--   merge(List.append(default(last(fifo(sendOk, recvOk), sendOk),
+--                             List.empty[Int]),
+--                     sendOk),
+--         {
+--           def l = default(last(fifo(sendOk, recvOk), recvOk),
+--                           List.empty[Int])
+--           if List.size(l) > 0 then List.tail(l) else l
+--         })
+-- def fifoBad(sendOk: Events[Int], recvOk: Events[Int]): Events[Bool] =
+--   filter(const(true, recvOk),
+--          {
+--            def l = default(last(fifo(sendOk, recvOk), recvOk),
+--                            List.empty[Int])
+--            List.size(l) > 0 && List.head(l) != recvOk
+--          })
+
+-- RULE: blocking send/receive move the task to BLOCKED
+def blockObl(block: Events[Int], i: Int): Events[Int] =
+  merge(time(filter(block, block == i)),
+        const(-1, filter(blocked, blocked == i)))
+def blockLate(block: Events[Int], i: Int): Events[Bool] =
+     default(blockObl(block, i), -1) >= 0
+  && time(exec) - default(blockObl(block, i), -1) > TOL
+def mustBlock(block: Events[Int]): Events[Bool] =
+  merge(merge(blockLate(block, 0), blockLate(block, 1)),
+        merge(blockLate(block, 2), blockLate(block, 3)))
+
+-- RULE: timeout operations end once their time has elapsed
+--  (deadline obligation as in semaphore.tessla; here there is no
+--  task-specific "Ok" to signal completion, so the next wake-up/ready(i)
+--  or the task's own timeout clears the obligation.)
+--  t0..t3 are the per-task ticks streams (see the comment in
+--  delay.tessla/semaphore.tessla for why they're kept separate).
+def pickTicks(t0: Events[Int], t1: Events[Int], t2: Events[Int],
+              t3: Events[Int], i: Int): Events[Int] =
+  if i == 0 then t0 else if i == 1 then t1 else if i == 2 then t2 else t3
+
+def tmoDeadline(t0: Events[Int], t1: Events[Int], t2: Events[Int],
+                t3: Events[Int], tmo: Events[Int], i: Int): Events[Int] =
+  {
+    def myTicks = pickTicks(t0, t1, t2, t3, i)
+    merge(merge(
+        time(filter(myTicks, myTicks >= 0)) + filter(myTicks, myTicks >= 0) * TICK,
+        const(-1, filter(ready, ready == i))),
+      const(-1, filter(tmo, tmo == i)))
+  }
+def tmoLate(t0: Events[Int], t1: Events[Int], t2: Events[Int],
+            t3: Events[Int], tmo: Events[Int], i: Int): Events[Bool] =
+     default(tmoDeadline(t0, t1, t2, t3, tmo, i), -1) >= 0
+  && time(exec) - default(tmoDeadline(t0, t1, t2, t3, tmo, i), -1) > TMO_SLACK
+def tmoMustEnd(t0: Events[Int], t1: Events[Int], t2: Events[Int],
+               t3: Events[Int], tmo: Events[Int]): Events[Bool] =
+  merge(merge(tmoLate(t0, t1, t2, t3, tmo, 0), tmoLate(t0, t1, t2, t3, tmo, 1)),
+        merge(tmoLate(t0, t1, t2, t3, tmo, 2), tmoLate(t0, t1, t2, t3, tmo, 3)))
+
+-- RULES: waking waiting tasks
+--  After RecvOk (a slot opened up), a waiting SENDER must be woken;
+--  after SendOk (a message became available), a waiting RECEIVER must be
+--  woken.
+--  Waiting set: Block(i) sets it; the next ready(i) (= wake-up) or
+--  Timeout(i) clears it. (The Ok events do not carry a task, so - unlike
+--  for mutex/semaphore - it is cleared via ready(i) here.)
+def qWaiting(block: Events[Int], tmo: Events[Int], i: Int): Events[Bool] =
+  merge(merge(const(true,  filter(block, block == i)),
+              const(false, filter(ready, ready == i))),
+        const(false, filter(tmo, tmo == i)))
+def qWakeObl(block: Events[Int], tmo: Events[Int], trigger: Events[Int],
+             i: Int): Events[Int] =
+  merge(time(filter(trigger,
+                    default(last(qWaiting(block, tmo, i), trigger), false))),
+        const(-1, filter(ready, ready == i)))
+def qWakeLate(block: Events[Int], tmo: Events[Int], trigger: Events[Int],
+              i: Int): Events[Bool] =
+     default(qWakeObl(block, tmo, trigger, i), -1) >= 0
+  && time(exec) - default(qWakeObl(block, tmo, trigger, i), -1) > TOL
+def qMustWake(block: Events[Int], tmo: Events[Int],
+              trigger: Events[Int]): Events[Bool] =
+  merge(merge(qWakeLate(block, tmo, trigger, 0),
+              qWakeLate(block, tmo, trigger, 1)),
+        merge(qWakeLate(block, tmo, trigger, 2),
+              qWakeLate(block, tmo, trigger, 3)))
+
+-- ===========================================================================
+-- Instantiation: g_sensorQueue
+-- ===========================================================================
+def violation_qsensor_count_range = guard(rangeBad(q_sensor_count))
+out violation_qsensor_count_range
+def violation_qsensor_count_delta =
+  guard(deltaBad(q_sensor_send_ok, q_sensor_count))
+out violation_qsensor_count_delta
+def violation_qsensor_recv_from_empty =
+  guard(recvFromEmpty(q_sensor_recv_ok, q_sensor_count))
+out violation_qsensor_recv_from_empty
+def violation_qsensor_send_to_full =
+  guard(sendToFull(q_sensor_send_ok, q_sensor_count))
+out violation_qsensor_send_to_full
+-- FIFO check disabled (see the fifo()/fifoBad() comment above)
+-- def violation_qsensor_fifo_integrity =
+--   guard(fifoBad(q_sensor_send_ok, q_sensor_recv_ok))
+-- out violation_qsensor_fifo_integrity
+def violation_qsensor_block_state =
+  guard(merge(mustBlock(q_sensor_send_block), mustBlock(q_sensor_recv_block)))
+out violation_qsensor_block_state
+def violation_qsensor_timeout_must_end =
+  guard(merge(tmoMustEnd(q_sensor_send_block_ticks_0, q_sensor_send_block_ticks_1,
+                         q_sensor_send_block_ticks_2, q_sensor_send_block_ticks_3,
+                         q_sensor_send_timeout),
+              tmoMustEnd(q_sensor_recv_block_ticks_0, q_sensor_recv_block_ticks_1,
+                         q_sensor_recv_block_ticks_2, q_sensor_recv_block_ticks_3,
+                         q_sensor_recv_timeout)))
+out violation_qsensor_timeout_must_end
+def violation_qsensor_wake_sender =
+  guard(qMustWake(q_sensor_send_block, q_sensor_send_timeout,
+                  q_sensor_recv_ok))
+out violation_qsensor_wake_sender
+def violation_qsensor_wake_receiver =
+  guard(qMustWake(q_sensor_recv_block, q_sensor_recv_timeout,
+                  q_sensor_send_ok))
+out violation_qsensor_wake_receiver
+
+-- ===========================================================================
+-- Instantiation: g_processedQueue
+-- ===========================================================================
+def violation_qproc_count_range = guard(rangeBad(q_proc_count))
+out violation_qproc_count_range
+def violation_qproc_count_delta =
+  guard(deltaBad(q_proc_send_ok, q_proc_count))
+out violation_qproc_count_delta
+def violation_qproc_recv_from_empty =
+  guard(recvFromEmpty(q_proc_recv_ok, q_proc_count))
+out violation_qproc_recv_from_empty
+def violation_qproc_send_to_full =
+  guard(sendToFull(q_proc_send_ok, q_proc_count))
+out violation_qproc_send_to_full
+-- FIFO check disabled (see the fifo()/fifoBad() comment above)
+-- def violation_qproc_fifo_integrity =
+--   guard(fifoBad(q_proc_send_ok, q_proc_recv_ok))
+-- out violation_qproc_fifo_integrity
+def violation_qproc_block_state =
+  guard(merge(mustBlock(q_proc_send_block), mustBlock(q_proc_recv_block)))
+out violation_qproc_block_state
+def violation_qproc_timeout_must_end =
+  guard(merge(tmoMustEnd(q_proc_send_block_ticks_0, q_proc_send_block_ticks_1,
+                         q_proc_send_block_ticks_2, q_proc_send_block_ticks_3,
+                         q_proc_send_timeout),
+              tmoMustEnd(q_proc_recv_block_ticks_0, q_proc_recv_block_ticks_1,
+                         q_proc_recv_block_ticks_2, q_proc_recv_block_ticks_3,
+                         q_proc_recv_timeout)))
+out violation_qproc_timeout_must_end
+def violation_qproc_wake_sender =
+  guard(qMustWake(q_proc_send_block, q_proc_send_timeout, q_proc_recv_ok))
+out violation_qproc_wake_sender
+def violation_qproc_wake_receiver =
+  guard(qMustWake(q_proc_recv_block, q_proc_recv_timeout, q_proc_send_ok))
+out violation_qproc_wake_receiver
+
+
+-- ===========================================================================
+-- Additionally expose the raw event streams (for Playground visualization).
+-- Only the violation_* streams above are required for the formal
+-- verification; this section is purely for visual inspection.
+-- ===========================================================================
+
+-- g_sensorQueue
+@VisEvents
+out q_sensor_send_try
+@VisEvents
+out q_sensor_send_ok
+@VisEvents
+out q_sensor_send_full
+@VisEvents
+out q_sensor_send_block
+@VisEvents
+out q_sensor_send_timeout
+@VisEvents
+out q_sensor_recv_try
+@VisEvents
+out q_sensor_recv_ok
+@VisEvents
+out q_sensor_recv_empty
+@VisEvents
+out q_sensor_recv_block
+@VisEvents
+out q_sensor_recv_timeout
+@VisSignal
+out q_sensor_count
+
+-- g_processedQueue
+@VisEvents
+out q_proc_send_try
+@VisEvents
+out q_proc_send_ok
+@VisEvents
+out q_proc_send_full
+@VisEvents
+out q_proc_send_block
+@VisEvents
+out q_proc_send_timeout
+@VisEvents
+out q_proc_recv_try
+@VisEvents
+out q_proc_recv_ok
+@VisEvents
+out q_proc_recv_empty
+@VisEvents
+out q_proc_recv_block
+@VisEvents
+out q_proc_recv_timeout
+@VisSignal
+out q_proc_count
+
+@VisSignal
+out exec
+@VisEvents
+out blocked
