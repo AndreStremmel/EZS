@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    app_resources.c
  * @brief   Definition and initialisation of all shared kernel objects.
- * @author  __________
+ * @author  Andre
  ******************************************************************************
  *
  * Central place where the application's queues, mutexes, semaphores and the
@@ -44,7 +44,7 @@ User_Data_t g_userConfig;
 /**
  * @brief Initialise all shared queues, mutexes, semaphores and the default
  *        user configuration.
- * @author __________
+ * @author Andre
  *
  * @note Must run before the scheduler starts, i.e. before any task can access
  *       one of these objects.

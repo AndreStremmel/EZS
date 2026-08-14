@@ -3,7 +3,7 @@
   ******************************************************************************
   * @file    stm32l4xx_it.c
   * @brief   Interrupt Service Routines.
-  * @author  __________ (USER CODE sections only)
+  * @author  Berkay (USER CODE sections only)
   ******************************************************************************
   * @attention
   *
@@ -194,7 +194,7 @@ void DebugMon_Handler(void)
 
 /**
   * @brief This function handles System tick timer.
-  * @author __________ (USER CODE sections)
+  * @author Berkay (USER CODE sections)
   *
   * The heartbeat of the RTOS: advances the HAL tick, runs the delay/timeout
   * countdown, asks the scheduler for the next task and pends a PendSV if the
@@ -237,7 +237,7 @@ void SysTick_Handler(void)
 
 /**
   * @brief Handles the HC-SR04 echo edge interrupt.
-  * @author __________
+  * @author Berkay
   *
   * The ISR only captures timestamps and gives the semaphore at the end of the
   * pulse; it then returns to the interrupted task without triggering any
@@ -257,7 +257,7 @@ void EXTI0_IRQHandler(void)
 /**
   * @brief GPIO EXTI callback, dispatched by the HAL per pin.
   * @param GPIO_Pin Pin that triggered the interrupt.
-  * @author __________
+  * @author Berkay
   *
   * Called by the HAL from within HAL_GPIO_EXTI_IRQHandler(). The pin check
   * keeps the handler correct if further EXTI sources are added later.
@@ -276,7 +276,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 /**
   * @brief Handles the USART1 interrupt (shell input).
-  * @author __________
+  * @author Berkay
   *
   * The HAL dispatches to HAL_UART_RxCpltCallback() in uart_driver.c, which
   * stores the character in the ring buffer and gives g_uartRxSemaphore once a

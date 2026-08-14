@@ -38,7 +38,7 @@
  * @param itemSize  Size of one message in bytes.
  * @param capacity  Number of messages the buffer can hold.
  * @param u8TraceId ID reported in the trace events of this object.
- * @author __________
+ * @author Andre
  */
 void OS_Queue_Init(OS_Queue_t *queue,
                    uint8_t *buffer,
