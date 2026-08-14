@@ -38,13 +38,6 @@ extern UART_HandleTypeDef huart1;
  *       A 1k/2k voltage divider is recommended, since the sensor drives the
  *       echo line at 5 V while the MCU pin is 3.3 V!
  *
- * IMPORTANT: PB4/PB5 are NOT freely usable on the B-L475E-IOT01A. According
- * to UM2153 table 11 they are permanently wired to the on-board sub-GHz radio
- * module (SPSGRF-915: SPI3_CSN on PB5, TIM3_CH1 on PB4). PA4 and PB0 are
- * listed as free in the same table ("GPIO_Output, ARD.D7" and
- * "TIM3_CH3, ARD.D3-PWM/INT1_EXTI0" respectively) and are routed directly to
- * the Arduino header.
- *
  * When moving to a different board or different pins, adjust only the two
  * defines below - but mind the EXTI handler naming: an ECHO pin NUMBER of
  * 0..4 has its own handler EXTIx_IRQHandler (x = pin number), pin numbers
