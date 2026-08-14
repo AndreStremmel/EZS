@@ -1,0 +1,166 @@
+-- ===========================================================================
+-- scheduler_tasks.tessla
+--  Scheduler and task-state rules for the DOS-RTOS.
+--
+--  Generate the input:
+--    python3 tools/sysview_to_tessla_bytes.py export.csv -o trace.input
+--  Check:
+--    java -jar tessla.jar interpreter tessla/scheduler_tasks.tessla trace.input
+--
+--  Passed = all violation_* streams stay empty.
+--
+--  IMPORTANT: this spec needs OS_TRACE_ISR = 1 in os_trace_config.h. The
+--  other specs (mutex/semaphore/delay/queue) run with OS_TRACE_ISR = 0
+--  to keep the trace small and overflow-safe; scheduler_tasks.tessla
+--  needs isr_enter/isr_exit to check the ISR-scheduling rule and must
+--  use a separate recording. See tessla/README.md.
+--
+--  Task indices/priorities (see tasks.c):
+--    0 = Sensor (prio 3), 1 = Proc (prio 1), 2 = UartShell (prio 1),
+--    3 = Idle (prio 0)
+--  State encoding: 0 = READY, 1 = RUNNING, 2 = BLOCKED
+-- ===========================================================================
+
+in exec:      Events[Int]    -- task index starts running (StartExec)
+in ready:     Events[Int]    -- task index becomes READY (StartReady)
+in blocked:   Events[Int]    -- task index becomes BLOCKED (StopReady)
+in isr_enter: Events[Int]    -- exception number (SysTick = 15)
+in isr_exit:  Events[Unit]
+
+-- 1 scheduler tick = 80us (in ns), measured empirically from the trace
+-- (see README.md / delay.tessla).
+def TICK: Int = 80000
+
+-- Recording starts mid-flight: the first ~250ms are needed until the
+-- reconstructed state has converged with reality. Violations before that
+-- are ignored.
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK:
+-- convergence needs some real time regardless of how long a tick is.
+def WARMUP: Int = 250000000
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+
+-- ---------------------------------------------------------------------------
+-- Per-task state reconstruction
+--  "A task is in exactly one state at a time" is thereby true by
+--  construction - what is actually CHECKED is that the event stream
+--  contains no contradictory transitions (see below).
+-- ---------------------------------------------------------------------------
+def ex(i: Int): Events[Int] = filter(exec,    exec    == i)
+def rd(i: Int): Events[Int] = filter(ready,   ready   == i)
+def bl(i: Int): Events[Int] = filter(blocked, blocked == i)
+
+def state(i: Int): Events[Int] =
+  merge(merge(const(1, ex(i)), const(0, rd(i))), const(2, bl(i)))
+
+-- State IMMEDIATELY BEFORE an exec event (last = strictly before)
+def p0: Events[Int] = default(last(state(0), exec), 0)
+def p1: Events[Int] = default(last(state(1), exec), 0)
+def p2: Events[Int] = default(last(state(2), exec), 0)
+def p3: Events[Int] = default(last(state(3), exec), 0)
+
+-- Priority of the task that just got scheduled in
+def execPrio: Events[Int] =
+  if exec == 0 then 3 else if exec == 3 then 0 else 1
+
+-- ---------------------------------------------------------------------------
+-- RULE: higher-priority tasks always run before lower-priority ones
+--  When task i is scheduled in, no READY task of higher priority may
+--  exist.
+-- ---------------------------------------------------------------------------
+def prioBad: Events[Bool] =
+     (p0 == 0 && 3 > execPrio)
+  || (p1 == 0 && 1 > execPrio)
+  || (p2 == 0 && 1 > execPrio)
+def violation_priority_order = guard(prioBad)
+out violation_priority_order
+
+-- ---------------------------------------------------------------------------
+-- RULE: the idle task only runs when no other task is READY
+--  (special case of the priority rule, reported as its own proof)
+-- ---------------------------------------------------------------------------
+def idleBad: Events[Bool] =
+  exec == 3 && (p0 == 0 || p1 == 0 || p2 == 0)
+def violation_idle_only_when_idle = guard(idleBad)
+out violation_idle_only_when_idle
+
+-- ---------------------------------------------------------------------------
+-- RULE: round-robin among equal priority (pair: Proc=1, UartShell=2)
+--  If the same task from the pair is chosen on two CONSECUTIVE
+--  schedule-ins that were both UNDER CONTENTION (both READY), round-robin
+--  order is violated (the other task should have had its turn).
+-- ---------------------------------------------------------------------------
+def pairExec: Events[Int] = filter(exec, exec == 1 || exec == 2)
+def contested: Events[Bool] =
+  filter(p1 == 0 && p2 == 0, exec == 1 || exec == 2)
+
+def rrBad: Events[Bool] =
+     contested
+  && default(last(contested, pairExec), false)
+  && pairExec == default(last(pairExec, pairExec), -1)
+def violation_round_robin = guard(rrBad)
+out violation_round_robin
+
+-- ---------------------------------------------------------------------------
+-- RULE: no task exceeds its time slice
+--  The scheduler runs on every SysTick (1 tick) and produces an exec
+--  event each time (even if the same task keeps running). So the gap
+--  between two exec events is never larger than one time slice (+
+--  tolerance for ISR jitter). A larger gap would mean a task blocked the
+--  tick and thereby overran its time slice.
+--  NOTE: lost SystemView packets (buffer overflow) also trigger this
+--  rule - check for an overflow indication in SystemView!
+-- ---------------------------------------------------------------------------
+def prevExecT: Events[Int] = last(time(exec), exec)   -- from the 2nd exec event on
+def execGap: Events[Int] = time(exec) - prevExecT
+def violation_timeslice = guard(execGap > 2 * TICK)
+out violation_timeslice
+
+-- ---------------------------------------------------------------------------
+-- RULE: after an ISR, the interrupted task resumes
+--  In this RTOS, ONLY the SysTick makes scheduling decisions; the actual
+--  context switch happens in the subsequent PendSV. Peripheral ISRs
+--  (EXTI=39, USART2=54) must therefore never produce an exec event.
+--  Check: every exec event must fall inside a SysTick window (between
+--  isr_enter==15 and the next isr_exit). Since SysTick has the highest
+--  priority, nothing can nest inside it - the next isr_exit always
+--  closes the SysTick, even if SysTick itself is nested inside another
+--  ISR.
+-- ---------------------------------------------------------------------------
+def inSysTick: Events[Bool] =
+  default(merge(isr_enter == 15, const(false, isr_exit)), false)
+def violation_isr_scheduling = guard(filter(const(true, exec), !inSysTick))
+out violation_isr_scheduling
+
+-- ---------------------------------------------------------------------------
+-- RULES: only valid state transitions / never READY and BLOCKED at once /
+--        BLOCKED tasks are never executed
+--  Allowed:  READY->RUNNING (exec), RUNNING->READY (tick/preemption),
+--            RUNNING->BLOCKED (blocking call), BLOCKED->READY (wake-up)
+--  Anything else is a violation. "exec out of BLOCKED" is additionally
+--  reported as its own rule.
+-- ---------------------------------------------------------------------------
+def execFromBlocked(i: Int): Events[Bool] =
+  default(last(state(i), ex(i)), 0) == 2
+def violation_exec_while_blocked = guard(merge(merge(
+    execFromBlocked(0), execFromBlocked(1)),
+    merge(execFromBlocked(2), execFromBlocked(3))))
+out violation_exec_while_blocked
+
+def badExec(i: Int): Events[Bool] =            -- exec only from READY
+  default(last(state(i), ex(i)), 0) != 0
+def badReady(i: Int): Events[Bool] =           -- READY only from RUNNING/BLOCKED
+  default(last(state(i), rd(i)), 1) == 0
+def badBlock(i: Int): Events[Bool] =           -- BLOCKED only from RUNNING
+  default(last(state(i), bl(i)), 1) != 1
+
+def transBad(i: Int): Events[Bool] =
+  merge(merge(badExec(i), badReady(i)), badBlock(i))
+
+def violation_invalid_transition = guard(merge(merge(
+    transBad(0), transBad(1)), merge(transBad(2), transBad(3))))
+out violation_invalid_transition
+
+-- Info stream (not an error, purely for following along in the output)
+def info_exec = exec
+out info_exec

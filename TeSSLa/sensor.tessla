@@ -1,0 +1,83 @@
+-- ===========================================================================
+-- sensor.tessla
+--  Project-specific rule: sensor readings are transmitted every 100ms.
+--
+--  uart_tx_dist fires exactly once per UART transmission (distance in
+--  mm; 65535 = the "SENSORFEHLER" error frame). The gap between two
+--  transmissions must fall within [85ms, 115ms].
+--
+--  Calibration exception: while 'cal <mm>' is running, the shell
+--  consumes readings internally (no UART distance output) - the cadence
+--  is deliberately paused. Transmission gaps that span a calibration
+--  phase are therefore not checked.
+--
+--  java -jar tessla.jar interpreter tessla/sensor.tessla trace.input
+--  Passed = violation_tx_period stays empty.
+--
+--  NOTE: unlike the other five specs, this one has not yet been run
+--  against a real recording (see tessla/README.md, status table) - it
+--  needs a trace from normal operation (OS_RUN_INTEGRATION_TESTS = 0)
+--  with the HC-SR04 connected. TICK/WARMUP below use the same values
+--  established for the other specs (see delay.tessla) as the best
+--  current estimate; PERIOD_MIN/PERIOD_MAX are independent of TICK and
+--  therefore unaffected.
+--
+--  See tessla/README.md for which trace to use, expected results, and
+--  the requirement-to-rule mapping.
+-- ===========================================================================
+
+in uart_tx_dist: Events[Int]
+in sensor_err:   Events[Int]
+in cal_start:    Events[Int]
+in cal_done:     Events[Int]
+
+-- 80us per tick, measured empirically from the trace on the other five
+-- specs (see delay.tessla). Kept here for consistency even though this
+-- spec's own PERIOD_MIN/MAX are expressed directly in ns, not in TICK.
+def TICK: Int   = 80000
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK
+-- (see delay.tessla for the rationale).
+def WARMUP: Int = 250000000
+def PERIOD_MIN: Int = 85000000   -- 85ms in ns
+def PERIOD_MAX: Int = 115000000  -- 115ms in ns
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+
+-- Gap to the previous transmission (defined from the 2nd transmission on)
+def prevTxT: Events[Int] = last(time(uart_tx_dist), uart_tx_dist)
+def dt: Events[Int] = time(uart_tx_dist) - prevTxT
+
+-- Calibration window: active between CalStart and CalDone; a gap also
+-- counts as "interrupted by calibration" if a CalStart or CalDone
+-- occurred since the previous transmission.
+def inCal: Events[Bool] =
+  default(merge(const(true, cal_start), const(false, cal_done)), false)
+def lastCalStartT: Events[Int] =
+  default(last(time(cal_start), uart_tx_dist), -1)
+def lastCalDoneT: Events[Int] =
+  default(last(time(cal_done), uart_tx_dist), -1)
+def calSpanned: Events[Bool] =
+  lastCalStartT > prevTxT || lastCalDoneT > prevTxT
+
+-- RULE: sensor readings are transmitted every 100ms (+/- 15ms tolerance)
+def periodBad: Events[Bool] =
+  filter(const(true, uart_tx_dist),
+         (dt < PERIOD_MIN || dt > PERIOD_MAX) && !inCal && !calSpanned)
+def violation_tx_period = guard(periodBad)
+out violation_tx_period
+
+-- Info: sensor errors (1 = no echo, 2 = pulse outside plausible range)
+-- and error frames on the UART - not a verification failure, but proof
+-- that errors are both detected AND transmitted.
+def info_sensor_err = sensor_err
+out info_sensor_err
+def info_tx_error_frames = filter(uart_tx_dist, uart_tx_dist == 65535)
+out info_tx_error_frames
+
+-- Running counters, reported as a summary in the output
+def tx_count: Events[Int] =
+  default(last(tx_count, uart_tx_dist), 0) + 1
+out tx_count
+def err_count: Events[Int] =
+  default(last(err_count, sensor_err), 0) + 1
+out err_count

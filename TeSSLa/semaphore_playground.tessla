@@ -1,0 +1,314 @@
+-- ===========================================================================
+-- semaphore_playground.tessla
+--  Playground/visualization variant of semaphore.tessla - NOT used for the
+--  formal verification run (that is semaphore.tessla). Identical rule
+--  logic; this file additionally exposes the raw event streams as `out`
+--  so the TeSSLa Playground (play.tessla.io) can plot them, and adds
+--  @VisEvents / @VisSignal annotations for a more readable graph.
+--
+--  Usage: paste this file into the Specification editor (top right) and
+--  a matching trace excerpt into the Trace editor (top left), then Run
+--  and switch to the "TeSSLa Visualization" tab. See tessla/README.md,
+--  section "Playground visualization" for the full walkthrough.
+--
+--  For the actual pass/fail verification, use semaphore.tessla instead:
+--  java -jar tessla.jar interpreter tessla/semaphore.tessla trace.input
+-- ===========================================================================
+
+in exec:    Events[Int]
+in ready:   Events[Int]
+in blocked: Events[Int]
+
+in sem_echo_try:          Events[Int]
+in sem_echo_ok:           Events[Int]
+in sem_echo_count:        Events[Int]
+in sem_echo_block:        Events[Int]
+-- Block duration PER TASK (see comment in delay.tessla): a shared ticks
+-- stream cannot be reliably attributed to the right task once blocking
+-- calls from several tasks interleave.
+in sem_echo_block_ticks_0: Events[Int]
+in sem_echo_block_ticks_1: Events[Int]
+in sem_echo_block_ticks_2: Events[Int]
+in sem_echo_block_ticks_3: Events[Int]
+in sem_echo_timeout:      Events[Int]
+in sem_echo_give:         Events[Int]
+in sem_echo_give_ignored: Events[Int]
+
+in sem_uartrx_try:          Events[Int]
+in sem_uartrx_ok:           Events[Int]
+in sem_uartrx_count:        Events[Int]
+in sem_uartrx_block:        Events[Int]
+in sem_uartrx_block_ticks_0: Events[Int]
+in sem_uartrx_block_ticks_1: Events[Int]
+in sem_uartrx_block_ticks_2: Events[Int]
+in sem_uartrx_block_ticks_3: Events[Int]
+in sem_uartrx_timeout:      Events[Int]
+in sem_uartrx_give:         Events[Int]
+in sem_uartrx_give_ignored: Events[Int]
+
+-- 80us per tick, measured empirically from the trace (see delay.tessla /
+-- README.md, "Tick length"). Not the 1ms default assumption.
+def TICK: Int      = 80000
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK:
+-- recording starts mid-flight, and the reconstructed state needs some
+-- real time to converge regardless of how long a tick is.
+def WARMUP: Int = 250000000
+def TOL: Int       = 2 * TICK
+-- Upper bound for "a timeout must actually end": generous, because the
+-- timeout clock only runs while BLOCKED (it pauses while the task is
+-- READY but a higher-priority task is running) - see README.
+def TMO_SLACK: Int = 100 * TICK
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+def prioOf(t: Events[Int]): Events[Int] =
+  if t == 0 then 3 else if t == 3 then 0 else 1
+
+-- RULE: a binary semaphore's value is only ever 0 or 1
+def rangeBad(count: Events[Int]): Events[Bool] =
+  filter(const(true, count), count < 0 || count > 1)
+
+-- RULE: an already-set semaphore may not be released again
+--  GiveOk while the value was already 1 beforehand = violation.
+--  (GiveIgnored events are the proof that the implementation rejects
+--  this - as a cross-check, a GiveIgnored while the value was 0 would
+--  be just as wrong.)
+def doubleGive(give: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, give), default(last(count, give), 0) == 1)
+def ignoredWrong(ign: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, ign), default(last(count, ign), 1) == 0)
+
+-- RULE: an empty semaphore may not be acquired successfully
+def takeFromEmpty(ok: Events[Int], count: Events[Int]): Events[Bool] =
+  filter(const(true, ok), default(last(count, ok), 1) == 0)
+
+-- Waiting set (as in mutex.tessla): Block sets it, the task's own
+-- Ok/Timeout clears it.
+def waiting(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+            i: Int): Events[Bool] =
+  merge(merge(const(true,  filter(block, block == i)),
+              const(false, filter(ok, ok == i))),
+        const(false, filter(tmo, tmo == i)))
+
+-- RULE: a blocking acquire must move the task to BLOCKED
+def blockObl(block: Events[Int], i: Int): Events[Int] =
+  merge(time(filter(block, block == i)),
+        const(-1, filter(blocked, blocked == i)))
+def blockLate(block: Events[Int], i: Int): Events[Bool] =
+     default(blockObl(block, i), -1) >= 0
+  && time(exec) - default(blockObl(block, i), -1) > TOL
+def mustBlock(block: Events[Int]): Events[Bool] =
+  merge(merge(blockLate(block, 0), blockLate(block, 1)),
+        merge(blockLate(block, 2), blockLate(block, 3)))
+
+-- RULE: a timeout acquire must not end BEFORE its time has elapsed ...
+--  At the Timeout event for task i: (now - last Block) must be at least
+--  Ticks*TICK - TOL. Ticks < 0 encodes OS_WAIT_FOREVER -> excluded.
+def blkT(block: Events[Int], i: Int): Events[Int] =
+  time(filter(block, block == i))
+-- ticks0..3 are the per-task ticks streams of the respective semaphore
+def blkTicks(ticks0: Events[Int], ticks1: Events[Int],
+             ticks2: Events[Int], ticks3: Events[Int], i: Int): Events[Int] =
+  if i == 0 then ticks0
+  else if i == 1 then ticks1
+  else if i == 2 then ticks2
+  else ticks3
+def earlyTmo(block: Events[Int], t0: Events[Int], t1: Events[Int],
+             t2: Events[Int], t3: Events[Int], ok: Events[Int],
+             tmo: Events[Int], i: Int): Events[Bool] =
+  {
+    def myTmo   = filter(tmo, tmo == i)
+    def myTicks = blkTicks(t0, t1, t2, t3, i)
+    -- "Is this block still current?": between the last Block event for
+    -- task i and NOW, no successful take (ok == i) may have occurred for
+    -- the same task - otherwise the block timestamp found belongs to an
+    -- already-completed, earlier wait phase and gets wrongly linked to a
+    -- later, unrelated timeout of the same task (false violation).
+    def blockStillOpen =
+      default(last(blkT(block, i), myTmo), -1)
+        > default(last(time(filter(ok, ok == i)), myTmo), -1)
+    default(last(myTicks, myTmo), -1) >= 0
+    && default(last(blkT(block, i), myTmo), -1) >= 0
+    && blockStillOpen
+    && time(myTmo) - default(last(blkT(block, i), myTmo), 0)
+       < default(last(myTicks, myTmo), 0) * TICK - 2 * TICK
+  }
+def tmoTooEarly(block: Events[Int], t0: Events[Int], t1: Events[Int],
+                t2: Events[Int], t3: Events[Int], ok: Events[Int],
+                tmo: Events[Int]): Events[Bool] =
+  merge(merge(earlyTmo(block, t0, t1, t2, t3, ok, tmo, 0),
+              earlyTmo(block, t0, t1, t2, t3, ok, tmo, 1)),
+        merge(earlyTmo(block, t0, t1, t2, t3, ok, tmo, 2),
+              earlyTmo(block, t0, t1, t2, t3, ok, tmo, 3)))
+
+-- ... and it must ALSO actually end once the time has elapsed.
+--  Obligation: a block with a finite ticks value sets a deadline; the
+--  task's own Ok or Timeout clears it. Deadline + TMO_SLACK exceeded
+--  (checked against the exec heartbeat) = violation.
+def tmoDeadline(block: Events[Int], t0: Events[Int], t1: Events[Int],
+                t2: Events[Int], t3: Events[Int], ok: Events[Int],
+                tmo: Events[Int], i: Int): Events[Int] =
+  {
+    def myTicks = blkTicks(t0, t1, t2, t3, i)
+    merge(merge(
+        time(filter(myTicks, myTicks >= 0)) + filter(myTicks, myTicks >= 0) * TICK,
+        const(-1, filter(ok, ok == i))),
+      const(-1, filter(tmo, tmo == i)))
+  }
+def tmoLate(block: Events[Int], t0: Events[Int], t1: Events[Int],
+            t2: Events[Int], t3: Events[Int], ok: Events[Int],
+            tmo: Events[Int], i: Int): Events[Bool] =
+     default(tmoDeadline(block, t0, t1, t2, t3, ok, tmo, i), -1) >= 0
+  && time(exec) - default(tmoDeadline(block, t0, t1, t2, t3, ok, tmo, i), -1)
+     > TMO_SLACK
+def tmoMustEnd(block: Events[Int], t0: Events[Int], t1: Events[Int],
+               t2: Events[Int], t3: Events[Int], ok: Events[Int],
+               tmo: Events[Int]): Events[Bool] =
+  merge(merge(tmoLate(block, t0, t1, t2, t3, ok, tmo, 0),
+              tmoLate(block, t0, t1, t2, t3, ok, tmo, 1)),
+        merge(tmoLate(block, t0, t1, t2, t3, ok, tmo, 2),
+              tmoLate(block, t0, t1, t2, t3, ok, tmo, 3)))
+
+-- RULE: releasing must wake a waiting task
+def wakeObl(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+            give: Events[Int], i: Int): Events[Int] =
+  merge(time(filter(give,
+                    default(last(waiting(block, ok, tmo, i), give), false))),
+        const(-1, filter(ready, ready == i)))
+def wakeLate(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+             give: Events[Int], i: Int): Events[Bool] =
+     default(wakeObl(block, ok, tmo, give, i), -1) >= 0
+  && time(exec) - default(wakeObl(block, ok, tmo, give, i), -1) > TOL
+def mustWake(block: Events[Int], ok: Events[Int], tmo: Events[Int],
+             give: Events[Int]): Events[Bool] =
+  merge(merge(wakeLate(block, ok, tmo, give, 0),
+              wakeLate(block, ok, tmo, give, 1)),
+        merge(wakeLate(block, ok, tmo, give, 2),
+              wakeLate(block, ok, tmo, give, 3)))
+
+-- RULE: priority ordering among waiting tasks
+def waitPrioBad(block: Events[Int], ok: Events[Int],
+                tmo: Events[Int]): Events[Bool] =
+     (default(last(waiting(block, ok, tmo, 0), ok), false) && 3 > prioOf(ok))
+  || (default(last(waiting(block, ok, tmo, 1), ok), false) && 1 > prioOf(ok))
+  || (default(last(waiting(block, ok, tmo, 2), ok), false) && 1 > prioOf(ok))
+
+-- ===========================================================================
+-- Instantiation: g_echoDoneSemaphore
+-- ===========================================================================
+def violation_echo_value_range = guard(rangeBad(sem_echo_count))
+out violation_echo_value_range
+def violation_echo_double_give =
+  guard(doubleGive(sem_echo_give, sem_echo_count))
+out violation_echo_double_give
+def violation_echo_ignored_wrong =
+  guard(ignoredWrong(sem_echo_give_ignored, sem_echo_count))
+out violation_echo_ignored_wrong
+def violation_echo_take_from_empty =
+  guard(takeFromEmpty(sem_echo_ok, sem_echo_count))
+out violation_echo_take_from_empty
+def violation_echo_block_state = guard(mustBlock(sem_echo_block))
+out violation_echo_block_state
+def violation_echo_timeout_early =
+  guard(tmoTooEarly(sem_echo_block,
+                    sem_echo_block_ticks_0, sem_echo_block_ticks_1,
+                    sem_echo_block_ticks_2, sem_echo_block_ticks_3,
+                    sem_echo_ok, sem_echo_timeout))
+out violation_echo_timeout_early
+def violation_echo_timeout_must_end =
+  guard(tmoMustEnd(sem_echo_block,
+                   sem_echo_block_ticks_0, sem_echo_block_ticks_1,
+                   sem_echo_block_ticks_2, sem_echo_block_ticks_3,
+                   sem_echo_ok, sem_echo_timeout))
+out violation_echo_timeout_must_end
+def violation_echo_wake_after_give =
+  guard(mustWake(sem_echo_block, sem_echo_ok, sem_echo_timeout,
+                 sem_echo_give))
+out violation_echo_wake_after_give
+def violation_echo_waiter_priority =
+  guard(waitPrioBad(sem_echo_block, sem_echo_ok, sem_echo_timeout))
+out violation_echo_waiter_priority
+
+-- ===========================================================================
+-- Instantiation: g_uartRxSemaphore
+-- ===========================================================================
+def violation_uartrx_value_range = guard(rangeBad(sem_uartrx_count))
+out violation_uartrx_value_range
+def violation_uartrx_double_give =
+  guard(doubleGive(sem_uartrx_give, sem_uartrx_count))
+out violation_uartrx_double_give
+def violation_uartrx_ignored_wrong =
+  guard(ignoredWrong(sem_uartrx_give_ignored, sem_uartrx_count))
+out violation_uartrx_ignored_wrong
+def violation_uartrx_take_from_empty =
+  guard(takeFromEmpty(sem_uartrx_ok, sem_uartrx_count))
+out violation_uartrx_take_from_empty
+def violation_uartrx_block_state = guard(mustBlock(sem_uartrx_block))
+out violation_uartrx_block_state
+def violation_uartrx_timeout_early =
+  guard(tmoTooEarly(sem_uartrx_block,
+                    sem_uartrx_block_ticks_0, sem_uartrx_block_ticks_1,
+                    sem_uartrx_block_ticks_2, sem_uartrx_block_ticks_3,
+                    sem_uartrx_ok, sem_uartrx_timeout))
+out violation_uartrx_timeout_early
+def violation_uartrx_timeout_must_end =
+  guard(tmoMustEnd(sem_uartrx_block,
+                   sem_uartrx_block_ticks_0, sem_uartrx_block_ticks_1,
+                   sem_uartrx_block_ticks_2, sem_uartrx_block_ticks_3,
+                   sem_uartrx_ok, sem_uartrx_timeout))
+out violation_uartrx_timeout_must_end
+def violation_uartrx_wake_after_give =
+  guard(mustWake(sem_uartrx_block, sem_uartrx_ok, sem_uartrx_timeout,
+                 sem_uartrx_give))
+out violation_uartrx_wake_after_give
+def violation_uartrx_waiter_priority =
+  guard(waitPrioBad(sem_uartrx_block, sem_uartrx_ok, sem_uartrx_timeout))
+out violation_uartrx_waiter_priority
+
+
+-- ===========================================================================
+-- Additionally expose the raw event streams (for Playground visualization).
+-- Only the violation_* streams above are required for the formal
+-- verification; this section is purely for visual inspection - without
+-- these `out` lines the Playground shows nothing at all for a PASSING run
+-- (empty violation_* streams), because TeSSLa only outputs what is
+-- explicitly declared `out`.
+-- ===========================================================================
+
+-- g_echoDoneSemaphore
+@VisEvents
+out sem_echo_try
+@VisEvents
+out sem_echo_ok
+@VisSignal
+out sem_echo_count
+@VisEvents
+out sem_echo_block
+@VisEvents
+out sem_echo_timeout
+@VisEvents
+out sem_echo_give
+@VisEvents
+out sem_echo_give_ignored
+
+-- g_uartRxSemaphore
+@VisEvents
+out sem_uartrx_try
+@VisEvents
+out sem_uartrx_ok
+@VisSignal
+out sem_uartrx_count
+@VisEvents
+out sem_uartrx_block
+@VisEvents
+out sem_uartrx_timeout
+@VisEvents
+out sem_uartrx_give
+@VisEvents
+out sem_uartrx_give_ignored
+
+-- Scheduler context: rendered as a signal (represents "who is currently
+-- running", i.e. a state that holds between events).
+@VisSignal
+out exec
+@VisEvents
+out blocked

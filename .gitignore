@@ -1,4 +1,5 @@
-.DS_Store/
+.DS_Store
+Core/.DS_Store
 .metadata/
 Debug/
 Release/

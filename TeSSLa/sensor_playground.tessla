@@ -1,0 +1,88 @@
+-- ===========================================================================
+-- sensor_playground.tessla
+--  Playground/visualization variant of sensor.tessla - NOT used for the
+--  formal verification run (that is sensor.tessla). Identical rule
+--  logic; this file additionally exposes the raw event streams as `out`
+--  so the TeSSLa Playground (play.tessla.io) can plot them, and adds
+--  @VisEvents annotations for a more readable graph.
+--
+--  Usage: paste this file into the Specification editor (top right) and
+--  a matching trace excerpt into the Trace editor (top left), then Run
+--  and switch to the "TeSSLa Visualization" tab. See tessla/README.md,
+--  section "Playground visualization" for the full walkthrough.
+--
+--  For the actual pass/fail verification, use sensor.tessla instead:
+--  java -jar tessla.jar interpreter tessla/sensor.tessla trace.input
+-- ===========================================================================
+
+in uart_tx_dist: Events[Int]
+in sensor_err:   Events[Int]
+in cal_start:    Events[Int]
+in cal_done:     Events[Int]
+
+-- 80us per tick, measured empirically from the trace on the other five
+-- specs (see delay.tessla). Kept here for consistency even though this
+-- spec's own PERIOD_MIN/MAX are expressed directly in ns, not in TICK.
+def TICK: Int   = 80000
+-- Fixed 250ms warm-up, deliberately NOT expressed as a multiple of TICK
+-- (see delay.tessla for the rationale).
+def WARMUP: Int = 250000000
+def PERIOD_MIN: Int = 85000000   -- 85ms in ns
+def PERIOD_MAX: Int = 115000000  -- 115ms in ns
+
+def guard(v: Events[Bool]): Events[Bool] = filter(v, v && time(v) > WARMUP)
+
+-- Gap to the previous transmission (defined from the 2nd transmission on)
+def prevTxT: Events[Int] = last(time(uart_tx_dist), uart_tx_dist)
+def dt: Events[Int] = time(uart_tx_dist) - prevTxT
+
+-- Calibration window: active between CalStart and CalDone; a gap also
+-- counts as "interrupted by calibration" if a CalStart or CalDone
+-- occurred since the previous transmission.
+def inCal: Events[Bool] =
+  default(merge(const(true, cal_start), const(false, cal_done)), false)
+def lastCalStartT: Events[Int] =
+  default(last(time(cal_start), uart_tx_dist), -1)
+def lastCalDoneT: Events[Int] =
+  default(last(time(cal_done), uart_tx_dist), -1)
+def calSpanned: Events[Bool] =
+  lastCalStartT > prevTxT || lastCalDoneT > prevTxT
+
+-- RULE: sensor readings are transmitted every 100ms (+/- 15ms tolerance)
+def periodBad: Events[Bool] =
+  filter(const(true, uart_tx_dist),
+         (dt < PERIOD_MIN || dt > PERIOD_MAX) && !inCal && !calSpanned)
+def violation_tx_period = guard(periodBad)
+out violation_tx_period
+
+-- Info: sensor errors (1 = no echo, 2 = pulse outside plausible range)
+-- and error frames on the UART - not a verification failure, but proof
+-- that errors are both detected AND transmitted.
+def info_sensor_err = sensor_err
+out info_sensor_err
+def info_tx_error_frames = filter(uart_tx_dist, uart_tx_dist == 65535)
+out info_tx_error_frames
+
+-- Running counters, reported as a summary in the output
+def tx_count: Events[Int] =
+  default(last(tx_count, uart_tx_dist), 0) + 1
+out tx_count
+def err_count: Events[Int] =
+  default(last(err_count, sensor_err), 0) + 1
+out err_count
+
+
+-- ===========================================================================
+-- Additionally expose the raw event streams (for Playground visualization).
+-- Only violation_tx_period above is required for the formal verification;
+-- this section is purely for visual inspection.
+-- ===========================================================================
+
+@VisEvents
+out uart_tx_dist
+@VisEvents
+out sensor_err
+@VisEvents
+out cal_start
+@VisEvents
+out cal_done
