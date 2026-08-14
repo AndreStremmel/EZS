@@ -103,8 +103,7 @@ result.
 For pure firmware functionality (distance measurement, shell), 0.2/0.3
 is sufficient. For the TeSSLa verification chain (SystemView recording
 → converter → TeSSLa interpreter), see **Section 4** further below and
-`tessla/README.md` (or `tessla/README_de.md`) for the full walkthrough
-covering all six specifications and their status.
+`tessla/README.md` for the full walkthrough covering all six specifications and their status.
 
 Short form:
 
@@ -204,7 +203,7 @@ time instead of immediately reporting a false `OS_TIMEOUT`.
 | Signal | Pin | Note |
 |---|---|---|
 | HC-SR04 TRIG | **PA4** (Arduino D7) | Push-pull, 3.3V is sufficient for the sensor |
-| HC-SR04 ECHO | **PB0** (Arduino D3, EXTI0) | via a 1kΩ/2kΩ voltage divider |
+| HC-SR04 ECHO | **PB0** (Arduino D3, EXTI0) | Simple jumper cable |
 | UART TX/RX | **PB6/PB7** (USART1) | hardwired to the ST-LINK Virtual COM Port |
 
 System clock **80MHz** from MSI (4MHz) + PLL — the board has no HSE
@@ -353,18 +352,11 @@ Fix: boot guards in `Scheduler_vCountdown()` and
 `Scheduler_pGetNextTask()`, plus atomically setting both pointers in
 `Scheduler_vInit()`.
 
-**PB4/PB5 are occupied on the IOT01A.** The originally planned pins for
-TRIG/ECHO are, per UM2153, hardwired to the on-board sub-GHz radio
-module (PB5 = SPSGRF-SPI3_CSN). Moved to **PA4/PB0**, both available on
-the Arduino header. Since PB0 sits on EXTI line 0, the handler is
-`EXTI0_IRQHandler` rather than `EXTI9_5_IRQHandler`.
-
 **The reset button is not always enough.** It only resets the STM32 —
 the ST-LINK/J-Link debug chip keeps its internal connection state.
 After aborted SWD sessions, only this helped: **unplug the USB cable,
 wait ~10s, plug it back in.** That resets both chips. This insight
 resolved several hours of what looked like firmware debugging.
-
 
 At the beginning, we were handed **two different versions of STM boards.** 
 We started our project using an STM32L475 and a CubeF4. To support both boards, 
@@ -388,10 +380,6 @@ mid-way through `MtxLockTimeout Mtx=%u` —
 `SEGGER_SYSVIEW_MAX_STRING_LEN` was too small (default well under the
 ~900 characters needed). Raising it fixed the truncation but produced
 an RTT overflow. See 2.2 for the consequence we chose.
-
-**`BUFFER_SIZE_UP` belongs in `SEGGER_RTT_Conf.h`**, not in
-`SEGGER_SYSVIEW_Conf.h` — the two config files are read by different
-code.
 
 **Function names were never resolved.** Even with a fully transmitted
 module description, SystemView kept showing our own events as
@@ -515,10 +503,6 @@ internal fallback value (`-1000000000`) produced an artificially huge
 difference when no prior episode existed, causing isolated false
 violations.
 
-**Open question:** whether the 80µs tick is a deliberate design choice
-(finer scheduling granularity) or a SysTick reload-value
-misconfiguration was not conclusively determined.
-
 ---
 
 ## 4. Verification Chain
@@ -579,27 +563,6 @@ double digits. Both properties are instead demonstrated functionally
 via integration test T18 (16 messages with a known checksum pattern
 through a queue smaller than the message count).
 
-### Practical Workflow
-
-```bash
-# Test mode for mutex/semaphore/delay/queue (genuine contention)
-#    os_trace_config.h: OS_RUN_INTEGRATION_TESTS = 1, OS_TRACE_ISR = 0
-python3 tools/sysview_to_tessla_bytes.py test.csv -o t.input
-java -jar tessla.jar interpreter tessla/mutex.tessla     t.input
-java -jar tessla.jar interpreter tessla/semaphore.tessla t.input
-java -jar tessla.jar interpreter tessla/delay.tessla     t.input
-java -jar tessla.jar interpreter tessla/queue.tessla     t.input
-
-# Separate run for scheduler/tasks (needs OS_TRACE_ISR = 1)
-python3 tools/sysview_to_tessla_bytes.py isr_test.csv -o i.input
-java -jar tessla.jar interpreter tessla/scheduler_tasks.tessla i.input
-
-# Normal operation for sensor.tessla
-#    os_trace_config.h: OS_RUN_INTEGRATION_TESTS = 0
-python3 tools/sysview_to_tessla_bytes.py normal.csv -o n.input
-java -jar tessla.jar interpreter tessla/sensor.tessla n.input
-```
-
 ---
 
 ## 5. Operation
@@ -617,17 +580,7 @@ Calibration averages 8 valid raw readings and sets
 pauses; `sensor.tessla` deliberately excludes this window
 (`CalStart` … `CalDone`) when checking the cadence.
 
-## 6. Generating the Documentation
-
-```bash
-doxygen Doxyfile      # → doc/html/index.html
-```
-
-The `Doxyfile` is configured to report missing documentation as a
-warning (`doc/doxygen_warnings.txt`); the current state is
-warning-free. Call and include graphs require Graphviz.
-
-## 7. Known Limitations
+## 6. Known Limitations
 
 - **Idle events are missing** (see 2.1) — a deliberate trade-off in
   favor of a stable trace.
